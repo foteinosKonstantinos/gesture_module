@@ -12,7 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     package_data={'': ['py.typed']},
-    install_requires=['setuptools'],
+    install_requires=['setuptools','onnxruntime'],
     zip_safe=True,
     maintainer='foteinosKonstantinos',
     maintainer_email='it2023086@hua.gr',
