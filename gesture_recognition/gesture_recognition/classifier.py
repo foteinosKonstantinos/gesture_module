@@ -56,7 +56,7 @@ class Classification_Node(Node):
                 self.__classes[i]:probs[0][i].item() for i in range(len(self.__classes))
             }
         })))
-        self.get_logger().info(f"published \'{pred_class}\' and per-classes probavilities")
+        self.get_logger().info(f"published \'{pred_class}\' and per-classes probabilities")
 
 def main():
     try:

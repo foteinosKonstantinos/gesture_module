@@ -58,7 +58,7 @@ source ./install/local_setup.bash
 Run the three nodes (in different terminals):
 
 ```bash
+ros2 run gesture_recognition stub_producer
 ros2 run gesture_recognition classifier
 ros2 run gesture_recognition stub_consumer
-ros2 run gesture_recognition stub_producer
 ```
