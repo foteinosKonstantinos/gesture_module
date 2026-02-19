@@ -1,32 +1,64 @@
-ros2 run my_package node_executable --ros-args ...
+### Gesture Recognition Module (T4.3)
 
-Every command requires sudo:
+**Foteinos Konstantinos (kfoteinos@hua.gr)**
 
-To build the image
+The image needs 1.26GB.
+
+### Instructions for docker
+
+To build the image:
+```bash
 sudo docker build -t gesture_container .
+```
 
-To create & enter the container
+> To view the existing images:
+> ```bash
+> sudo docker images -a
+> ```
+>
+> To remove an image:
+> ```bash
+> sudo docker rmi gesture_container
+> ```
+
+To create & enter the container:
+```bash
 sudo docker run -it gesture_container /bin/bash
+```
 
-To see the running containers
+To view the running containers:
+```bash
 sudo docker container ps -a
+```
 
-To see the existing images:
-sudo docker images -a
+To enter the container:
+```bash
+sudo docker exec -it <container ID> bash
+```
 
-To remove an image:
-sudo docker rmi gesture_container
+### Instructions for ROS:
 
-To enter the container
-sudo docker exec -it &lt;container ID&gt; bash
+After entering the container:
 
-Build the package
+Activate ROS (Humble) (zsh, bash, ... according to your terminal):
+```bash
+source /opt/ros/humble/setup.bash
+```
+
+Build the package:
+```bash
 colcon build --packages-select gesture_recognition
+```
 
-Run the following to anounce the package
-source ./install/local_setup.zsh
+Run the following before use the package:
+```bash
+source ./install/local_setup.bash
+```
 
-Run the three nodes:
+Run the three nodes (in different terminals):
+
+```bash
 ros2 run gesture_recognition classifier
 ros2 run gesture_recognition stub_consumer
 ros2 run gesture_recognition stub_producer
+```

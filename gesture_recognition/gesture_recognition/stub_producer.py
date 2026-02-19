@@ -28,7 +28,7 @@ class Stub_RGB_Stream(Node):
         self.timer = self.create_timer(1, self.generate_stream)
         # self.data = np.asarray(Image.open(self.get_parameter("path").get_parameter_value().string_value))
         self.data = np.asarray(Image.open(path_img))
-        self.data = self.data.reshape((self.data.shape[2],self.data.shape[0],self.data.shape[1])) # as required by the interface
+        self.data = self.data.reshape((self.data.shape[2],self.data.shape[0],self.data.shape[1])) # as required by the classifier
 
     def generate_stream(self):
         data = json.dumps(self.data.tolist())
