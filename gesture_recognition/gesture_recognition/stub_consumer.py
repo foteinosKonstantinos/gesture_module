@@ -1,13 +1,10 @@
-#   PUBLISHER, WORKING AS A STUB
-#   ros2 run my_package node_executable --ros-args ...
-#   https://answers.ros.org/question/403914/
-
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-import json
 from std_msgs.msg import String
+import json
 
+# Node
 class Stub_Consumer(Node):
     
     def __init__(self):
@@ -23,14 +20,12 @@ class Stub_Consumer(Node):
         results = json.loads(data.data)
         self.get_logger().info("Class = "+results["class"]+" and probs "+str(results["probabilities"]))
 
-def main() -> None:
+def main():
     try:
         rclpy.init()
-        consumer = Stub_Consumer()
-        rclpy.spin(node=consumer)
+        rclpy.spin(node=Stub_Consumer())
     except (ExternalShutdownException, KeyboardInterrupt):
         pass
-
 
 if __name__ == "__main__":
     main()

@@ -12,10 +12,10 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     package_data={'': ['py.typed']},
-    install_requires=['setuptools','onnxruntime'],
+    install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='foteinosKonstantinos',
-    maintainer_email='it2023086@hua.gr',
+    maintainer='Foteinos Konstantinos',
+    maintainer_email='kfoteinos@hua.gr',
     description='TODO: Package description',
     license='Apache-2.0',
     extras_require={
@@ -27,7 +27,7 @@ setup(
         'console_scripts': [
             'stub_producer = gesture_recognition.stub_producer:main',
             'stub_consumer = gesture_recognition.stub_consumer:main',
-            'efficientnetb0 = gesture_recognition.efficientnetb0:main'
+            'classifier = gesture_recognition.classifier:main'
         ],
     },
 )
