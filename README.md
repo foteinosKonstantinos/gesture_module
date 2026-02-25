@@ -21,9 +21,9 @@ sudo docker build -t gesture_container .
 > sudo docker rmi gesture_container
 > ```
 
-To create & enter the container:
+To create & enter the container (the `--net host` is mandatory to enable access to outside topics):
 ```bash
-sudo docker run -it gesture_container /bin/bash
+sudo docker run --net host -it gesture_container /bin/bash
 ```
 
 To view the running containers:

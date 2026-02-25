@@ -25,9 +25,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'stub_producer = gesture_recognition.stub_producer:main',
             'stub_consumer = gesture_recognition.stub_consumer:main',
-            'classifier = gesture_recognition.classifier:main'
+            'classifier = gesture_recognition.classifier:main',
         ],
     },
 )

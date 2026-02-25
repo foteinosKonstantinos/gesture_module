@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y tzdata
 ENV TZ=Europe/Athens
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN apt-get update && apt-get install -y ros-humble-ros-base ros-dev-tools
+RUN apt-get install -y libgl1 libglib2.0-0
 SHELL ["/bin/bash", "-c"]
 RUN apt-get install -y python3 python3-pip
-RUN pip install onnxruntime
+RUN pip install onnxruntime opencv-python numpy
