@@ -70,7 +70,7 @@ class Classification_Node(Node):
                     },
                     "properties": {
                         "class":pred_class,
-                        "confidence":probs[argmax_idx]
+                        "confidence":probs[0][argmax_idx].item()
                     }
                 }
             ]
