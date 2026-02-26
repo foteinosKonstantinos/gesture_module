@@ -17,8 +17,8 @@ class Stub_Consumer(Node):
         )
 
     def show(self, data:String):
-        results = json.loads(data.data)
-        self.get_logger().info("Class = "+results["class"]+" and probs "+str(results["probabilities"]))
+    #     results = json.loads(data.data)
+        self.get_logger().info(str(data.data))
 
 def main():
     try:
