@@ -8,7 +8,7 @@ The image needs 1.26GB.
 
 Input: Messages of type `Image` published on the topic `/camera_front/raw_image`.
 
-Output: Messages of type `String` containing a GeoJSON.
+Output: Messages of type `String` containing a GeoJSON published on the topic `gesture_command`.
 
 The schema of the exported GeoJSON has as follows:
 
@@ -101,7 +101,6 @@ source ./install/local_setup.bash
 Run the three nodes (in different terminals):
 
 ```bash
-ros2 run gesture_recognition stub_producer
 ros2 run gesture_recognition classifier
 ros2 run gesture_recognition stub_consumer
 ```
