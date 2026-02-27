@@ -3,8 +3,8 @@
 <package format="3">
   <name>gesture_recognition</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="it2023086@hua.gr">foteinosKonstantinos</maintainer>
+  <description>Gesture recognition module</description>
+  <maintainer email="kfoteinos@hua.gr">Foteinos Konstantinos (HUA)</maintainer>
   <license>Apache-2.0</license>
 
   <test_depend>ament_copyright</test_depend>

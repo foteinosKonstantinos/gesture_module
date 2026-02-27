@@ -2,13 +2,13 @@
 
 **Foteinos Konstantinos (kfoteinos@hua.gr)**
 
-The image needs 1.26GB.
+The image needs 2.73GB.
 
 ### General information:
 
 Input: Messages of type `Image` published on the topic `/camera_front/raw_image`.
 
-Output: Messages of type `String` containing a GeoJSON published on the topic `gesture_command`.
+Output: Messages of type `String` containing a GeoJSON published on the topic `/gesture_command`.
 
 The schema of the exported GeoJSON has as follows:
 
@@ -32,7 +32,7 @@ The schema of the exported GeoJSON has as follows:
 }
 ```
 
-**Important:** Works only for one person. If the pose estimator doesn't detect any person, the node doesn't publish any message. 
+**Important:** If the pose estimator doesn't detect any person, the node doesn't publish any message. No GPU support.
 
 ### Instructions for docker:
 
@@ -98,9 +98,19 @@ Run the following before use the package:
 source ./install/local_setup.bash
 ```
 
-Run the three nodes (in different terminals):
+Run the node:
 
 ```bash
 ros2 run gesture_recognition classifier
-ros2 run gesture_recognition stub_consumer
 ```
+
+View the detections topic:
+```bash
+ros2 topic echo gesture_command
+```
+
+### TODOs:
+
+1. Handle multiple humans (>1)
+2. Determine relative position
+3. Transform it to absolute

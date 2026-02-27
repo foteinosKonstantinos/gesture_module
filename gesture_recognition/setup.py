@@ -14,9 +14,9 @@ setup(
     package_data={'': ['py.typed']},
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Foteinos Konstantinos',
+    maintainer='Foteinos Konstantinos (HUA)',
     maintainer_email='kfoteinos@hua.gr',
-    description='TODO: Package description',
+    description='Gesture recognition module. Please see README for more details.',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -25,8 +25,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'stub_consumer = gesture_recognition.stub_consumer:main',
-            'classifier = gesture_recognition.classifier:main',
-        ],
-    },
+            'gesture_classifier = gesture_recognition.classifier:main'
+        ]
+    }
 )
