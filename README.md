@@ -101,7 +101,7 @@ source ./install/local_setup.bash
 Run the node:
 
 ```bash
-ros2 run gesture_recognition classifier
+ros2 run gesture_recognition gesture_classifier
 ```
 
 View the detections topic:

@@ -5,12 +5,14 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
+from message_filters import Subscriber, ApproximateTimeSynchronizer
 import cv2
 import json
 import numpy as np
 import onnxruntime
 from ultralytics import YOLO
+
 
 # Deployment details
 ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
@@ -48,12 +50,20 @@ class Gesture_Classifier(Node):
         '''
         super().__init__("gesture_classifier")
         self.__classes = classes
-        self.create_subscription(
-            msg_type=Image,
-            topic="/camera_front/raw_image",
-            callback=self.__prediction_callback,
-            qos_profile=10
-        )
+        
+        # self.create_subscription(
+        #     msg_type=Image,
+        #     topic="/camera_front/raw_image",
+        #     callback=self.__prediction_callback,
+        #     qos_profile=10
+        # )
+
+        ApproximateTimeSynchronizer(
+            fs=[Subscriber(self, Image, "/camera_front/raw_image"), Subscriber(self, CameraInfo, "/camera_front/camera_info")],
+            queue_size=10,
+            slop=1e-2
+        ).registerCallback(self.__prediction_callback)
+
         self.__publisher=self.create_publisher(
             msg_type = String,
             topic = "/gesture_command",
@@ -63,9 +73,10 @@ class Gesture_Classifier(Node):
         self.__pose_estimator = YOLO(pose_estimator)
         self.__fg0 = fg0
         self.__d0 = d0
+        self.__counter = 0
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier_onnx} for {len(self.__classes)} classes.")
 
-    def __estimate_depth(self, image):
+    def __estimate_depth_geometrically(self, image):
         '''
         Returns the average depth of the two considered keypoints (left and right shoulder).
         Parameters:
@@ -81,22 +92,43 @@ class Gesture_Classifier(Node):
         rs = result.keypoints.data[person][6][[0,1]].numpy().astype(int) # right shoulder
         fg = ((ls-rs)**2).sum().item() ** (1/2)
         d = (self.__fg0 * self.__d0) / fg
-        return d
+        u = (ls[1]+rs[1])/2
+        v = (ls[0]+rs[0])/2
+        return d, u, v
     
-    def __estimate_location(self, depth): # TODO
+    def __estimate_relative_location(self, u, v, f, depth, intrinsics) -> np.ndarray:
+        '''
+        Backproject
+        u = x' = horizontal
+        v = y' = vertical
+        '''
+        Z = depth - f # focal length
+        K = intrinsics
+        P_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
+        P_3D = np.linalg.inv(K) @ (Z * P_2D_h)
+        return P_3D
+
+    def __estimate_absolute_location(self):
         pass
 
-    def __prediction_callback(self,in_data:Image):
+    def __prediction_callback(self, in_data:Image, intrinsics:CameraInfo):
         '''
         Parameters:
             in_data:    colored image represnted as sensor_msgs/msg/Image of arbitrary dimensions
         '''
+        
+        # WARNING: Position estimation w.r.t to the initial image resolution
+
         image = np.asarray(in_data.data, dtype=np.float32).reshape((in_data.height, in_data.width, 3)) # H x W x 3
-        depth = self.__estimate_depth(image)
+        depth, u, v = self.__estimate_depth_geometrically(image)
+
         if depth is None:
             self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} no detected person")
             return
-        self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} detected person in distance: {depth}")
+        
+        relative_position = self.__estimate_relative_location(u, v, depth=depth, intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+
+        self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} detected person in distance: {depth} and position: {relative_position.tolist()}")
         probs = self.__session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})
         argmax_idx = np.asarray(probs[0]).argmax()
         pred_class = self.__classes[argmax_idx]
@@ -113,11 +145,14 @@ class Gesture_Classifier(Node):
                     "properties": {
                         "class":pred_class,
                         "confidence":confidence,
-                        "depth":depth
+                        "depth":depth,
+                        "id":self.__counter,
+                        "relative_position":relative_position.tolist()
                     }
                 }
             ]
         })))
+        self.__counter += 1
         self.get_logger().info(f"published \'{pred_class}\' and confidence {confidence}")
 
 def main():
