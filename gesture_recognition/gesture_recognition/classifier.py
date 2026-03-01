@@ -5,8 +5,9 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import String
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 from message_filters import Subscriber, ApproximateTimeSynchronizer
+import tf2_ros
 import cv2
 import json
 import numpy as np
@@ -17,6 +18,7 @@ from ultralytics import YOLO
 # Deployment details
 ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
+FOCAL_LENGTH = 1 # typical values of focal length are <10 mm for ordinary cameras; therefore, the impact on the final results is negligible
 
 # Gesture commands. The ordering is crucial.
 CLASSES = [
@@ -59,7 +61,7 @@ class Gesture_Classifier(Node):
         # )
 
         ApproximateTimeSynchronizer(
-            fs=[Subscriber(self, Image, "/camera_front/raw_image"), Subscriber(self, CameraInfo, "/camera_front/camera_info")],
+            fs=[Subscriber(self, Image, "/camera_front/raw_image"), Subscriber(self, CameraInfo, "/camera_front/camera_info"), Subscriber(self, NavSatFix, "/fix")],
             queue_size=10,
             slop=1e-2
         ).registerCallback(self.__prediction_callback)
@@ -96,7 +98,7 @@ class Gesture_Classifier(Node):
         v = (ls[0]+rs[0])/2
         return d, u, v
     
-    def __estimate_relative_location(self, u, v, f, depth, intrinsics) -> np.ndarray:
+    def __estimate_relative_location(self, u, v, depth, intrinsics, f=FOCAL_LENGTH) -> np.ndarray:
         '''
         Backproject
         u = x' = horizontal
@@ -108,10 +110,10 @@ class Gesture_Classifier(Node):
         P_3D = np.linalg.inv(K) @ (Z * P_2D_h)
         return P_3D
 
-    def __estimate_absolute_location(self):
+    def __estimate_absolute_location(self, relative_position, latitude, longitude) -> tuple[float]:
         pass
 
-    def __prediction_callback(self, in_data:Image, intrinsics:CameraInfo):
+    def __prediction_callback(self, in_data:Image, intrinsics:CameraInfo, global_position:NavSatFix):
         '''
         Parameters:
             in_data:    colored image represnted as sensor_msgs/msg/Image of arbitrary dimensions
@@ -121,14 +123,13 @@ class Gesture_Classifier(Node):
 
         image = np.asarray(in_data.data, dtype=np.float32).reshape((in_data.height, in_data.width, 3)) # H x W x 3
         depth, u, v = self.__estimate_depth_geometrically(image)
-
         if depth is None:
             self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} no detected person")
             return
-        
         relative_position = self.__estimate_relative_location(u, v, depth=depth, intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+        global_position = self.__estimate_absolute_location(self, relative_position, global_position.latitude, global_position.longitude)
 
-        self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} detected person in distance: {depth} and position: {relative_position.tolist()}")
+        self.get_logger().info(f"recieved: {in_data.height} x {in_data.width} detected person in distance: {depth} and position: {global_position}")
         probs = self.__session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})
         argmax_idx = np.asarray(probs[0]).argmax()
         pred_class = self.__classes[argmax_idx]
@@ -140,7 +141,7 @@ class Gesture_Classifier(Node):
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
-                        "coordinates": [0, 0] # TODO
+                        "coordinates": global_position
                     },
                     "properties": {
                         "class":pred_class,
