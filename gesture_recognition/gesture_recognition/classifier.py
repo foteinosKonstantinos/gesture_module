@@ -1,20 +1,13 @@
 # Foteinos Konstantinos (HUA)
 # Contact: kfoteinos@hua.gr
 
-
-#   Conventions:
-#   -   u: horizontal 2D image plane coordinate
-#   -   v: vertical 2D image plane coordinate
-#   -   Z: distance from the image plane
-#   -   depth: distance from the optical center
-
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
+from nav_msgs.msg import Odometry
 from message_filters import Subscriber, ApproximateTimeSynchronizer
-import tf2_ros
 import cv2
 import json
 import math
@@ -81,13 +74,11 @@ class Gesture_Classifier(Node):
             Output:             topic /gesture_command and message type std_msgs/msg/String
         '''
         super().__init__("gesture_classifier")
-
         ApproximateTimeSynchronizer(
-            fs=[Subscriber(self, Image, "/camera_front/raw_image"), Subscriber(self, CameraInfo, "/camera_front/camera_info"), Subscriber(self, NavSatFix, "/fix")],
+            fs=[Subscriber(self, Image, "/camera_front/raw_image"), Subscriber(self, CameraInfo, "/camera_front/camera_info"), Subscriber(self, NavSatFix, "/fix"), Subscriber(self, Odometry, "/dog_odom")],
             queue_size=10,
             slop=1e-2
         ).registerCallback(self.__main_callback)
-
         self.__publisher=self.create_publisher(
             msg_type = String,
             topic = "/gesture_command",
@@ -100,7 +91,7 @@ class Gesture_Classifier(Node):
         self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
-        self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier_onnx} for {len(self.__classes)} classes.")
+        self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier_onnx}.")
 
 
     def __detect_keypoints(self, image, names = KEYPOINTS) -> list[dict]: # H x W x 3 nd array
@@ -221,7 +212,15 @@ class Gesture_Classifier(Node):
         }
     
 
-    def __main_callback(self, image:Image, intrinsics:CameraInfo, global_position:NavSatFix):
+    def __quaternion_to_rpy(self, qx, qy, qz, qw):
+        return {
+            "roll": math.atan2(2.0*(qx*qy + qw*qz), qw*qw + qx*qx - qy*qy - qz*qz),
+            "pitch":math.asin(-2.0*(qx*qz - qw*qy)),
+            "yaw":  math.atan2(2.0*(qy*qz + qw*qx), qw*qw - qx*qx - qy*qy + qz*qz)
+        }
+
+
+    def __main_callback(self, image:Image, intrinsics:CameraInfo, global_position:NavSatFix, odometry:Odometry):
         '''
         Parameters:
             in_data:    colored image represnted as sensor_msgs/msg/Image of arbitrary dimensions
@@ -233,7 +232,8 @@ class Gesture_Classifier(Node):
         if depth is None:
             return
         relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=intrinsics)
-        global_position = self.__estimate_absolute_location(self, global_position.latitude, global_position.longitude, None, None)
+        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)
+        global_position = self.__estimate_absolute_location(self, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         prediction = self.__predict_from_image(image)
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
@@ -257,7 +257,7 @@ class Gesture_Classifier(Node):
             ]
         })))
         self.__counter += 1
-        self.get_logger().info(f"published \'{prediction['class']}\' and confidence {prediction['confidence']}")
+        self.get_logger().info(f"published \'{prediction['class']}\' with confidence {prediction['confidence']} at depth {depth}")
 
 
 def main():
