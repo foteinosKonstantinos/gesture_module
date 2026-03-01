@@ -6,7 +6,7 @@ The image needs 2.73GB.
 
 ### General information:
 
-Input: Messages of type `Image` published on the topic `/camera_front/raw_image`, `CameraInfo` published on `/camera_front/camera_info`, `NavSatFix` published on `/fix`.
+Input: Messages of type `Image` published on the topic `/camera_front/raw_image`, `CameraInfo` published on `/camera_front/camera_info`, `NavSatFix` published on `/fix` and `Odometry` on `/dog_odom`.
 
 Output: Messages of type `String` containing a GeoJSON published on the topic `/gesture_command`.
 
@@ -25,7 +25,33 @@ The schema of the exported GeoJSON has as follows:
             "properties": {
                 "class": <predicted class>,
                 "confidence": <confidence of the prediction>,
-                "depth": <estimated distance between the signer and the camera>
+                "depth": <estimated distance between the signer and the camera>,
+                "id": <serial number>,
+                "timestamp": <time in nanoseconds>,
+                "keypoints_and_depths": [
+                    {
+                        "Nose": [<u>, <v>],
+                        "Left Eye": [<u>, <v>],
+                        "Right Eye": [<u>, <v>],
+                        "Left Ear": [<u>, <v>],
+                        "Right Ear": [<u>, <v>],
+                        "Left Shoulder": [<u>, <v>],
+                        "Right Shoulder": [<u>, <v>],
+                        "Left Elbow": [<u>, <v>],
+                        "Right Elbow": [<u>, <v>],
+                        "Left Wrist": [<u>, <v>],
+                        "Right Wrist": [<u>, <v>],
+                        "Left Hip": [<u>, <v>],
+                        "Right Hip": [<u>, <v>],
+                        "Left Knee": [<u>, <v>],
+                        "Right Knee": [<u>, <v>],
+                        "Left Ankle": [<u>, <v>],
+                        "Right Ankle": [<u>, <v>],
+                        "depth": <depth value>
+                    },
+                    ...
+                ],
+                "relative_position": <relative position>
             }
         }
     ]
@@ -33,6 +59,8 @@ The schema of the exported GeoJSON has as follows:
 ```
 
 **Important:** If the pose estimator doesn't detect any person, the node doesn't publish any message. No GPU support.
+
+ROS BAG: https://drive.google.com/file/d/1Sw_Gl6oxveW6lPsleHsdZHQrkLQjHBT3/view?usp=sharing
 
 ### Instructions for docker:
 
