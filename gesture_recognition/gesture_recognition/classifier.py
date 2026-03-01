@@ -99,14 +99,14 @@ class Gesture_Classifier(Node):
         Parameters:
             image:  numpy array with dimensions height x width x 3 (H x W x 3)
         Returns:
-            Keypoint name/vu coordinates in a np array pairs for every detected person
+            Keypoint name/vu coordinates pairs for every detected person
         '''
         result = self.__pose_estimator(image, verbose=False)[0].keypoints.data
         keypoints = []
         for person in range(len(result)):
             keypoints.append(dict({}))
             for i in range(len(names)):
-                keypoints[-1][names[i]] = result[person][i][0,1].numpy().astype(int)
+                keypoints[-1][names[i]] = result[person][i][[0,1]].numpy().astype(int).tolist()
         return keypoints
     
 
@@ -114,8 +114,8 @@ class Gesture_Classifier(Node):
         '''
         Returns: detection uv and depth d
         '''
-        ls = keypoints["Left Shoulder"]
-        rs = keypoints["Right Shoulder"]
+        ls = np.asarray(keypoints["Left Shoulder"])
+        rs = np.asarray(keypoints["Right Shoulder"])
         fg = ((ls-rs)**2).sum().item() ** (1/2)
         d = (self.__fg0 * self.__d0) / fg
         u = (ls[1]+rs[1])/2
@@ -139,7 +139,7 @@ class Gesture_Classifier(Node):
         argmin_u = None
         argmin_v = None
         keypoints_and_depths = []
-        for person in len(keypoints):
+        for person in range(len(keypoints)):
             depth, u, v = self.__estimate_depth_from_keypoints(keypoints[person])
             if depth<min_depth:
                 min_depth = depth
@@ -231,9 +231,9 @@ class Gesture_Classifier(Node):
         depth, u, v, keypoints_and_depths = self.__estimate_depths_geometrically(image)
         if depth is None:
             return
-        relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=intrinsics)
-        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)
-        global_position = self.__estimate_absolute_location(self, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+        relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"]
+        global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         prediction = self.__predict_from_image(image)
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
