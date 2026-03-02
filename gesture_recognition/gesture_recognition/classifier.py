@@ -67,10 +67,13 @@ class Gesture_Classifier(Node):
             classifier_onnx:    Path to an onnx model for classification; input image 3x480x640 and 12 classes
             pose_estimator:     YOLO (human) pose estimator, supported by ultralytics YOLO (will be downloaded automatically if is not already downloaded)
             classes:            The label for each one of the 12 gestures
-            fg0:                Calibration distance between the left and right shoulder keypoints
-            d0:                 Calibration distance between the signer and the camera
+            fg0:                Calibration distance between the left and right shoulder keypoints (in pixels)
+            d0:                 Calibration distance between the signer and the camera (in mm)
         Associated topics:
-            Input:              topic /camera_front/raw_image and message type sensor_msgs/msg/Image
+            Input:              topic /camera_front/raw_image type Image
+                                topic /camera_front/camera_info type Image
+                                topic /fix type NavSatFix
+                                topic /dog_odom type Odometry
             Output:             topic /gesture_command and message type std_msgs/msg/String
         '''
         super().__init__("gesture_classifier")
@@ -112,7 +115,7 @@ class Gesture_Classifier(Node):
 
     def __estimate_depth_from_keypoints(self, keypoints:dict) -> float:
         '''
-        Returns: detection uv and depth d
+        Returns: detection uv (pixels) and depth d (in mm)
         '''
         ls = np.asarray(keypoints["Left Shoulder"])
         rs = np.asarray(keypoints["Right Shoulder"])
@@ -129,8 +132,11 @@ class Gesture_Classifier(Node):
         Parameters:
             image:  numpy array with dimensions height x width x 3 (H x W x 3)
         Returns:
-            d:      depth, i.e. distance from the optical center (scalar)
-        "Closest person" assumption
+            depth:              depth, i.e. distance from the optical center (scalar) (in mm)
+            u:                  horizontal coordinates (pixels)
+            v:                  vertical coordinates (pixels)
+            keypoints & depths: keypoints (uv) and corresponding depth for every person
+        Assumes that the closest person is the signer.
         '''
         keypoints = self.__detect_keypoints(image=image)
         if len(keypoints)==0:
@@ -147,16 +153,22 @@ class Gesture_Classifier(Node):
                 argmin_v = v
             keypoints_and_depths.append(keypoints[person])
             keypoints_and_depths[-1]["depth"] = depth
-        return min_depth, argmin_u, argmin_v, keypoints
+        return min_depth, argmin_u, argmin_v, keypoints_and_depths
 
 
     def __estimate_relative_location(self, u, v, depth, intrinsics, f=FOCAL_LENGTH) -> np.ndarray:
         '''
-        Backproject
-        u = x' = horizontal
-        v = y' = vertical
+        Backprojects a point to 3D space
+        Parameters:
+            u:          x' (horizontal) (in pixels)
+            v:          y' (vertical) (in pixels)
+            depth:      disantce from the optical center (in mm)
+            intrinsics: camera intrinsics (in pixels)
+            f:          focal length (in mm)
+        Returns:
+            the position in 3D space (in mm)
         '''
-        Z = depth - f # focal length
+        Z = depth - f
         K = intrinsics
         P_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
         P_3D = np.linalg.inv(K) @ (Z * P_2D_h)
@@ -166,8 +178,14 @@ class Gesture_Classifier(Node):
     def __estimate_absolute_location(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
         '''
         Parameters:
-            det_distance:           Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera)
-            cam_global_position:    Current global position of the camera (which is considered to be the same with the robot's)
+            det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera)
+            cam_lat:        Current global latitude of the camera/robot
+            cam_lon:        Current global longitude of the camera/robot
+            orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
+            orientation_y:  The same with orientation_x
+        Returns:
+            longitude:      GPS
+            latitude:       GPS
         '''
         cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon)
         norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
@@ -179,6 +197,11 @@ class Gesture_Classifier(Node):
     def __xy_to_global_position(self, x, y) -> list:
         '''
         Based on: https://github.com/AnnaMi0/triffid-perception/blob/master/src/triffid_ugv_perception/triffid_ugv_perception/geojson_bridge.py
+        Parameters:
+            x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels
+        Returns:
+            longitude:  GPS
+            latutude:   GPS
         '''
         lat = self.__init_latitude + (y / EARTH_RADIUS) * (180.0 / math.pi)
         lon = self.__init_longitude + (x / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
@@ -198,7 +221,7 @@ class Gesture_Classifier(Node):
         if self.__init_latitude is None or self.__init_longitude is None:
             self.__init_latitude = position.latitude
             self.__init_longitude = position.longitude
-            self.get_logger().info(f"Initial position in (latitude, longtitude)) = ({self.__init_latitude}, {self.__init_longitude})")
+            self.get_logger().info(f"Initial position in (latitude, longtitude) = ({self.__init_latitude}, {self.__init_longitude})")
 
         
     def __predict_from_image(self, image, classes=CLASSES):
@@ -224,6 +247,8 @@ class Gesture_Classifier(Node):
         '''
         Parameters:
             in_data:    colored image represnted as sensor_msgs/msg/Image of arbitrary dimensions
+            ....
+            Odometry orientation should be as described in (*), meaning that zero angle means the orienation is "co-linear" to a parallel
         '''
         self.get_logger().info(f"Recieved image of size {image.height} x {image.width} (H x W)")
         self.__register_initial_global_position(global_position)
@@ -232,7 +257,7 @@ class Gesture_Classifier(Node):
         if depth is None:
             return
         relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"]
+        angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
         global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         prediction = self.__predict_from_image(image)
         self.__publisher.publish(String(data=json.dumps({
