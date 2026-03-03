@@ -123,7 +123,7 @@ class Gesture_Classifier(Node):
         d = (self.__fg0 * self.__d0) / fg
         u = (ls[1]+rs[1])/2
         v = (ls[0]+rs[0])/2
-        return d, u, v
+        return d, u.item(), v.item()
 
 
     def __estimate_depths_geometrically(self, image):
@@ -198,13 +198,13 @@ class Gesture_Classifier(Node):
         '''
         Based on: https://github.com/AnnaMi0/triffid-perception/blob/master/src/triffid_ugv_perception/triffid_ugv_perception/geojson_bridge.py
         Parameters:
-            x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels
+            x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels (in mm)
         Returns:
             longitude:  GPS
             latutude:   GPS
         '''
-        lat = self.__init_latitude + (y / EARTH_RADIUS) * (180.0 / math.pi)
-        lon = self.__init_longitude + (x / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
+        lat = self.__init_latitude + (y*1000 / EARTH_RADIUS) * (180.0 / math.pi)
+        lon = self.__init_longitude + (x*1000 / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
         return lon, lat
     
 
@@ -214,7 +214,7 @@ class Gesture_Classifier(Node):
         '''
         y = (lat - self.__init_latitude) * (math.pi / 180.0) * EARTH_RADIUS
         x = (lon - self.__init_longitude) * (math.pi / 180.0) * (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))
-        return x, y
+        return x/1000, y/1000 # (in mm)
 
 
     def __register_initial_global_position(self, position:NavSatFix):
@@ -276,7 +276,7 @@ class Gesture_Classifier(Node):
                         "id":self.__counter,
                         "timestamp":self.get_clock().now().nanoseconds,
                         "keypoints_and_depths": keypoints_and_depths,
-                        "relative_position": relative_position
+                        "relative_position": relative_position.tolist()
                     }
                 }
             ]
