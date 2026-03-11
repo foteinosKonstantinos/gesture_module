@@ -178,7 +178,7 @@ class Gesture_Classifier(Node):
     def __estimate_absolute_location(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
         '''
         Parameters:
-            det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera)
+            det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera) (in mm)
             cam_lat:        Current global latitude of the camera/robot
             cam_lon:        Current global longitude of the camera/robot
             orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
@@ -221,7 +221,7 @@ class Gesture_Classifier(Node):
         if self.__init_latitude is None or self.__init_longitude is None:
             self.__init_latitude = position.latitude
             self.__init_longitude = position.longitude
-            self.get_logger().info(f"Initial position in (latitude, longtitude) = ({self.__init_latitude}, {self.__init_longitude})")
+            self.get_logger().info(f"Initial position in (latitude, longitude) = ({self.__init_latitude}, {self.__init_longitude})")
 
         
     def __predict_from_image(self, image, classes=CLASSES):
@@ -246,12 +246,12 @@ class Gesture_Classifier(Node):
     def __main_callback(self, image:Image, intrinsics:CameraInfo, global_position:NavSatFix, odometry:Odometry):
         '''
         Parameters:
-            in_data:    colored image represnted as sensor_msgs/msg/Image of arbitrary dimensions
+            in_data:    colored image represented as sensor_msgs/msg/Image of arbitrary dimensions
             ....
-            Odometry orientation should be as described in (*), meaning that zero angle means the orienation is "co-linear" to a parallel
+            Odometry orientation should be as described in (*), meaning that zero angle means the orientation is "co-linear" to a parallel
         '''
-        self.get_logger().info(f"Recieved image of size {image.height} x {image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
         self.__register_initial_global_position(global_position)
+        self.get_logger().info(f"Received image of size {image.height} x {image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
         image = np.asarray(image.data, dtype=np.float32).reshape((image.height, image.width, 3)) # H x W x 3
         depth, u, v, keypoints_and_depths = self.__estimate_depths_geometrically(image)
         if depth is None:
