@@ -15,7 +15,7 @@ import numpy as np
 import onnxruntime
 from ultralytics import YOLO
 
-EARTH_RADIUS = 6378137.0
+EARTH_RADIUS = 6378137.0 # in meters
 
 # Deployment details
 ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
@@ -184,8 +184,8 @@ class Gesture_Classifier(Node):
             orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
             orientation_y:  The same with orientation_x
         Returns:
-            longitude:      GPS
-            latitude:       GPS
+            longitude:      GPS (degrees)
+            latitude:       GPS (degrees)
         '''
         cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon)
         norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
@@ -200,8 +200,8 @@ class Gesture_Classifier(Node):
         Parameters:
             x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels (in mm)
         Returns:
-            longitude:  GPS
-            latutude:   GPS
+            longitude:  GPS (degrees)
+            latutude:   GPS (degrees)
         '''
         lat = self.__init_latitude + (y*1000 / EARTH_RADIUS) * (180.0 / math.pi)
         lon = self.__init_longitude + (x*1000 / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)

@@ -136,9 +136,3 @@ View the detections topic:
 ```bash
 ros2 topic echo gesture_command
 ```
-
-### TODOs:
-
-1. Handle multiple humans (>1)
-2. Determine relative position
-3. Transform it to absolute
