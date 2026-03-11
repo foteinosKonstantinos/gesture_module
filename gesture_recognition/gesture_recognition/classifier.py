@@ -250,7 +250,7 @@ class Gesture_Classifier(Node):
             ....
             Odometry orientation should be as described in (*), meaning that zero angle means the orienation is "co-linear" to a parallel
         '''
-        self.get_logger().info(f"Recieved image of size {image.height} x {image.width} (H x W)")
+        self.get_logger().info(f"Recieved image of size {image.height} x {image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
         self.__register_initial_global_position(global_position)
         image = np.asarray(image.data, dtype=np.float32).reshape((image.height, image.width, 3)) # H x W x 3
         depth, u, v, keypoints_and_depths = self.__estimate_depths_geometrically(image)
@@ -258,8 +258,9 @@ class Gesture_Classifier(Node):
             return
         relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
         angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
-        global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+        det_global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         prediction = self.__predict_from_image(image)
+        self.get_logger().info(f"Detection position: {det_global_position} Class: {prediction['class']}")
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
             "features":[
@@ -267,7 +268,7 @@ class Gesture_Classifier(Node):
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
-                        "coordinates": global_position
+                        "coordinates": det_global_position
                     },
                     "properties": {
                         "class":prediction["class"],
