@@ -14,9 +14,9 @@ setup(
     package_data={'': ['py.typed']},
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Foteinos Konstantinos (HUA)',
+    maintainer='Harokopio University of Athens',
     maintainer_email='kfoteinos@hua.gr',
-    description='Gesture recognition module. Please see README for more details.',
+    description='Gesture recognition module. Please see the README for more details.',
     license='Apache-2.0',
     extras_require={
         'test': [

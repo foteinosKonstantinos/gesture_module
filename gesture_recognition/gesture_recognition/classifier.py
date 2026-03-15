@@ -28,7 +28,7 @@ ODOM_TOPIC = "/dog_odom"
 DEPTH_TOPIC = "/camera_front/depth"
 RGB_TOPIC = "/camera_front/color"
 CAMERA_INFO = "/camera_front/camera_info"
-OUTPUT_TOPIC = "/human_pose"
+OUTPUT_TOPIC = "/gesture_command"
 
 # Gesture commands. The ordering is crucial.
 CLASSES = [
@@ -79,22 +79,7 @@ class Gesture_Classifier(Node):
                  odom_topic:str=ODOM_TOPIC, 
                  output_topic:str=OUTPUT_TOPIC,
                  classification_threshold:float = CLASSIFICATION_THRESHOLD,
-                 pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD
-                 ):
-        '''
-        Parameters:
-            classifier_onnx:    Path to an onnx model for classification; input image 3x480x640 and 12 classes
-            pose_estimator:     YOLO (human) pose estimator, supported by ultralytics YOLO (will be downloaded automatically if is not already downloaded)
-            classes:            The label for each one of the 12 gestures
-            fg0:                Calibration distance between the left and right shoulder keypoints (in pixels)
-            d0:                 Calibration distance between the signer and the camera (in mm)
-        Associated topics:
-            Input:              topic /camera_front/raw_image type Image
-                                topic /camera_front/camera_info type Image
-                                topic /fix type NavSatFix
-                                topic /dog_odom type Odometry
-            Output:             topic /gesture_command and message type std_msgs/msg/String
-        '''
+                 pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD):
         super().__init__("gesture_classifier")
         ApproximateTimeSynchronizer(
             fs=[
@@ -178,7 +163,7 @@ class Gesture_Classifier(Node):
         return d, u, v, c
 
 
-    def __estimate_relative_location(self, u, v, depth, intrinsics, f=FOCAL_LENGTH) -> np.ndarray:
+    def __estimate_relative_location(self, u, v, depth, intrinsics) -> np.ndarray:
         '''
         Backprojects a point to 3D space
         Parameters:
@@ -186,14 +171,11 @@ class Gesture_Classifier(Node):
             v:          y' (vertical) (in pixels)
             depth:      disantce from the optical center (in mm)
             intrinsics: camera intrinsics (in pixels)
-            f:          focal length (in mm)
         Returns:
             the position in 3D space (in mm)
         '''
-        z = depth - f
-        k = intrinsics
         p_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
-        p_3D = np.linalg.inv(k) @ (z * p_2D_h)
+        p_3D = np.linalg.inv(intrinsics) @ (depth * p_2D_h)
         return p_3D
 
 
@@ -294,7 +276,7 @@ class Gesture_Classifier(Node):
         argmin_idx = None
         min_depth = math.inf
         for idx, single_person_keypoints in enumerate(all_keypoints):
-            depth, u, v = self.__aggregate(single_person_keypoints)
+            depth, u, v, c = self.__aggregate(single_person_keypoints)
             if depth < min_depth:
                 argmin_u = u
                 argmin_v = v

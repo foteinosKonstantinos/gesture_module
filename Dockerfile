@@ -18,11 +18,9 @@ RUN apt-get update && apt-get install -y ros-humble-ros-base ros-dev-tools
 RUN apt-get install -y libgl1 libglib2.0-0
 SHELL ["/bin/bash", "-c"]
 
-# Download python packages
 RUN apt-get install -y python3 python3-pip nano
 RUN apt clean && apt autoremove --purge
 RUN pip install onnxruntime opencv-python numpy && pip cache purge
 
-# It is crucial to download ultralytics only for CPU; otherwise, the disk requirements are enormous.
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && pip cache purge
 RUN pip install --no-cache-dir ultralytics && pip cache purge
