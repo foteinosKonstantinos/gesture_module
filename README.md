@@ -2,8 +2,6 @@
 
 **Foteinos Konstantinos (kfoteinos@hua.gr)**
 
-The image needs 2.73GB.
-
 ### General information:
 
 Input: Messages of type `Image` published on the topic `/camera_front/raw_image`, `CameraInfo` published on `/camera_front/camera_info`, `NavSatFix` published on `/fix` and `Odometry` on `/dog_odom`.

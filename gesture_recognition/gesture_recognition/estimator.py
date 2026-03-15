@@ -1,3 +1,6 @@
+# HUA
+# Contact: kfoteinos@hua.gr
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -5,17 +8,13 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 from nav_msgs.msg import Odometry
 from message_filters import Subscriber, ApproximateTimeSynchronizer
-import cv2
 import json
 import math
 import numpy as np
-import onnxruntime
 from ultralytics import YOLO
 
 EARTH_RADIUS = 6378137.0 # in meters
 
-# Deployment details
-ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 FOCAL_LENGTH = 1 # typical values of focal length are <10 mm for ordinary cameras; therefore, the impact on the final results is negligible
 NAV_TOPIC = "/fix"
@@ -24,22 +23,6 @@ DEPTH_TOPIC = "/camera_front/depth"
 RGB_TOPIC = "/camera_front/color"
 CAMERA_INFO = "/camera_front/camera_info"
 OUTPUT_TOPIC = "/human_pose"
-
-# Gesture commands. The ordering is crucial.
-CLASSES = [
-    "fetch-a-gas-mask",
-    "come-to-me",
-    "ok-to-go",
-    "move-away-from-here",
-    "operation-finished",
-    "freeze",
-    "emergency-situation",
-    "i-need-help",
-    "evacuate-the-area",
-    "i-lost-connection",
-    "fetch-a-shovel",
-    "fetch-an-axe"
-]
 
 KEYPOINTS = [
     "Nose",
@@ -62,32 +45,10 @@ KEYPOINTS = [
 ]
 
 
-class Gesture_Classifier(Node):
+class Human_Pose_Estimator(Node):
 
-    def __init__(self, 
-                 classifier_onnx:str=ONNX_MODEL, 
-                 pose_estimator:str=POSE_ESTIMATOR, 
-                 color_topic:str=RGB_TOPIC, 
-                 depth_topic:str=DEPTH_TOPIC, 
-                 camera_info:str=CAMERA_INFO, 
-                 nav_fix_topic:str=NAV_TOPIC, 
-                 odom_topic:str=ODOM_TOPIC, 
-                 output_topic:str=OUTPUT_TOPIC):
-        '''
-        Parameters:
-            classifier_onnx:    Path to an onnx model for classification; input image 3x480x640 and 12 classes
-            pose_estimator:     YOLO (human) pose estimator, supported by ultralytics YOLO (will be downloaded automatically if is not already downloaded)
-            classes:            The label for each one of the 12 gestures
-            fg0:                Calibration distance between the left and right shoulder keypoints (in pixels)
-            d0:                 Calibration distance between the signer and the camera (in mm)
-        Associated topics:
-            Input:              topic /camera_front/raw_image type Image
-                                topic /camera_front/camera_info type Image
-                                topic /fix type NavSatFix
-                                topic /dog_odom type Odometry
-            Output:             topic /gesture_command and message type std_msgs/msg/String
-        '''
-        super().__init__("gesture_classifier")
+    def __init__(self, pose_estimator:str=POSE_ESTIMATOR, color_topic:str=RGB_TOPIC, depth_topic:str=DEPTH_TOPIC, camera_info:str=CAMERA_INFO, nav_fix_topic:str=NAV_TOPIC, odom_topic:str=ODOM_TOPIC, output_topic:str=OUTPUT_TOPIC):
+        super().__init__("human_pose_estimator")
         ApproximateTimeSynchronizer(
             fs=[
                 Subscriber(self, Image, color_topic), 
@@ -101,18 +62,15 @@ class Gesture_Classifier(Node):
         ).registerCallback(self.__main_callback)
         self.__publisher=self.create_publisher(
             msg_type = String,
-            topic = "/gesture_command",
+            topic = output_topic,
             qos_profile = 10
         )
-        self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
         self.__pose_estimator = YOLO(pose_estimator)
-        self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
-        self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier_onnx}.")
 
 
-    def __detect_keypoints(self, image, depth_map, names = KEYPOINTS) -> list[dict]:
+    def __detect_keypoints(self, image, depth_map, names = KEYPOINTS) -> list[dict]: # H x W x 3 nd arrays
         '''
         Parameters:
             image:      numpy array with dimensions height x width x 3 (H x W x 3)
@@ -140,8 +98,8 @@ class Gesture_Classifier(Node):
                     uvcd.append(0)
                 keypoints[-1][names[i]] = uvcd
         return keypoints
-
     
+
     def __aggregate(self, keypoints:dict) -> float:
         '''
         Parameters:
@@ -173,7 +131,7 @@ class Gesture_Classifier(Node):
             intrinsics: camera intrinsics (in pixels)
             f:          focal length (in mm)
         Returns:
-            the position in 3D space (in mm)
+            the x,y,z position in 3D space (in mm)
         '''
         Z = depth - f
         K = intrinsics
@@ -229,17 +187,6 @@ class Gesture_Classifier(Node):
             self.__init_longitude = position.longitude
             self.get_logger().info(f"Initial position in (latitude, longitude) = ({self.__init_latitude}, {self.__init_longitude})")
 
-        
-    def __predict_from_image(self, image, classes=CLASSES):
-        probabilities = self.__recognition_session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})[0]
-        argmax = np.asarray(probabilities).argmax()
-        pred_class = classes[argmax]
-        confidence = probabilities[argmax].item()
-        return {
-            "class": pred_class,
-            "confidence": confidence
-        }
-    
 
     def __quaternion_to_rpy(self, qx, qy, qz, qw):
         return {
@@ -260,70 +207,46 @@ class Gesture_Classifier(Node):
         Publishes:
             See README
         '''
-
+        
         assert color_image.height == depth_map.height and color_image.width == depth_map.width
-
+        
         self.__register_initial_global_position(global_position)
         self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
         
         color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
         depth_map_array = np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32).reshape((depth_map.height, depth_map.width, 1)) # H x W x 1
-        
+
         all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
-
-        if len(all_keypoints) == 0:
-            return
-        
-        argmin_u = None
-        argmin_v = None
-        argmin_idx = None
-        min_depth = math.inf
-        for idx, single_person_keypoints in enumerate(all_keypoints):
+        features = []
+        for single_person_keypoints in all_keypoints:
             depth, u, v = self.__aggregate(single_person_keypoints)
-            if depth < min_depth:
-                argmin_u = u
-                argmin_v = v
-                min_depth = depth
-                argmin_idx = idx
-
+            relative_position = self.__estimate_relative_location(u=u,v=v,depth=depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+            angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
+            det_global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": det_global_position
+                },
+                "properties": {
+                    "depth":depth,
+                    "timestamp":self.get_clock().now().nanoseconds,
+                    "keypoints_and_depths": single_person_keypoints,
+                    "relative_position": relative_position.tolist()
+                }
+            })
         
-        relative_position = self.__estimate_relative_location(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-
-        angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
-        det_global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
-        
-        prediction = self.__predict_from_image(color_image_array)
-        
-        self.get_logger().info(f"Detection position: {det_global_position} Class: {prediction['class']}")
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
-            "features":[
-                {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": det_global_position
-                    },
-                    "properties": {
-                        "class":prediction["class"],
-                        "confidence":prediction["confidence"],
-                        "depth":depth,
-                        "id":self.__counter,
-                        "timestamp":self.get_clock().now().nanoseconds,
-                        "keypoints_and_depths": all_keypoints[argmin_idx],
-                        "relative_position": relative_position.tolist()
-                    }
-                }
-            ]
+            "features":features
         })))
-        self.__counter += 1
-        self.get_logger().info(f"published \'{prediction['class']}\' with confidence {prediction['confidence']} at depth {depth}")
 
 
 def main():
     try:
         rclpy.init()
-        rclpy.spin(node=Gesture_Classifier())
+        rclpy.spin(node=Human_Pose_Estimator())
     except (ExternalShutdownException, KeyboardInterrupt):
         pass
 
