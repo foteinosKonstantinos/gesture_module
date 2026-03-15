@@ -15,8 +15,13 @@ from ultralytics import YOLO
 EARTH_RADIUS = 6378137.0 # in meters
 
 # Deployment details
+
 ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
+
+CLASSIFICATION_THRESHOLD = 0.99
+POSE_ESTIMATION_THRESHOLD = 0.9
+
 FOCAL_LENGTH = 1 # typical values of focal length are <10 mm for ordinary cameras; therefore, the impact on the final results is negligible
 NAV_TOPIC = "/fix"
 ODOM_TOPIC = "/dog_odom"
@@ -72,7 +77,10 @@ class Gesture_Classifier(Node):
                  camera_info:str=CAMERA_INFO, 
                  nav_fix_topic:str=NAV_TOPIC, 
                  odom_topic:str=ODOM_TOPIC, 
-                 output_topic:str=OUTPUT_TOPIC):
+                 output_topic:str=OUTPUT_TOPIC,
+                 classification_threshold:float = CLASSIFICATION_THRESHOLD,
+                 pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD
+                 ):
         '''
         Parameters:
             classifier_onnx:    Path to an onnx model for classification; input image 3x480x640 and 12 classes
@@ -101,11 +109,13 @@ class Gesture_Classifier(Node):
         ).registerCallback(self.__main_callback)
         self.__publisher=self.create_publisher(
             msg_type = String,
-            topic = "/gesture_command",
+            topic = output_topic,
             qos_profile = 10
         )
         self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
+        self.__classification_threshold = classification_threshold
         self.__pose_estimator = YOLO(pose_estimator)
+        self.__pose_estimation_threshold = pose_estimation_threshold
         self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
@@ -147,20 +157,25 @@ class Gesture_Classifier(Node):
         Parameters:
             keypoints:  Keypoints of a single person in the format of __detect_keypoints output
         Returns:
-            avg:    average depth of the keypoints (in the given depth measurement units)
+            d:      average depth of the keypoints (in the given depth measurement units)
             u:      average u (in pixels)
             v:      average v (in pixels)
+            c:      average confidence ([0,1])
         '''
-        avg = u = v = 0
+        d = u = v = c = total = 0
         for keypoint_name in keypoints.keys():
             if keypoints[keypoint_name][3] == 0:
                 continue
-            avg += keypoints[keypoint_name][3]
+            total += 1
             u += keypoints[keypoint_name][0]
             v += keypoints[keypoint_name][1]
-        assert len(keypoints) == len(KEYPOINTS)
-        avg /= len(keypoints)
-        return avg, u, v
+            c += keypoints[keypoint_name][2]
+            d += keypoints[keypoint_name][3]
+        d /= total
+        u /= total
+        v /= total
+        c /= total
+        return d, u, v, c
 
 
     def __estimate_relative_location(self, u, v, depth, intrinsics, f=FOCAL_LENGTH) -> np.ndarray:
@@ -175,11 +190,11 @@ class Gesture_Classifier(Node):
         Returns:
             the position in 3D space (in mm)
         '''
-        Z = depth - f
-        K = intrinsics
-        P_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
-        P_3D = np.linalg.inv(K) @ (Z * P_2D_h)
-        return P_3D
+        z = depth - f
+        k = intrinsics
+        p_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
+        p_3D = np.linalg.inv(k) @ (z * p_2D_h)
+        return p_3D
 
 
     def __estimate_absolute_location(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
@@ -293,8 +308,10 @@ class Gesture_Classifier(Node):
         det_global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         
         prediction = self.__predict_from_image(color_image_array)
+        if prediction["confidence"] < self.__classification_threshold:
+            self.get_logger().warning(f"Detection position: {det_global_position} Class: {prediction['class']} - LOW CONFIDENCE (<{self.__classification_threshold})")
+            return
         
-        self.get_logger().info(f"Detection position: {det_global_position} Class: {prediction['class']}")
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
             "features":[
@@ -317,7 +334,7 @@ class Gesture_Classifier(Node):
             ]
         })))
         self.__counter += 1
-        self.get_logger().info(f"published \'{prediction['class']}\' with confidence {prediction['confidence']} at depth {depth}")
+        self.get_logger().info(f"Detection position: {det_global_position} Class: {prediction['class']} with confidence {prediction['confidence']} at depth {depth}")
 
 
 def main():

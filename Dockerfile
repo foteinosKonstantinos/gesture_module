@@ -19,7 +19,7 @@ RUN apt-get install -y libgl1 libglib2.0-0
 SHELL ["/bin/bash", "-c"]
 
 # Download python packages
-RUN apt-get install -y python3 python3-pip
+RUN apt-get install -y python3 python3-pip nano
 RUN apt clean && apt autoremove --purge
 RUN pip install onnxruntime opencv-python numpy && pip cache purge
 

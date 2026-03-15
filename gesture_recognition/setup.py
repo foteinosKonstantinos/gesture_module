@@ -25,7 +25,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'gesture_classifier = gesture_recognition.classifier:main'
+            'gesture_classifier = gesture_recognition.classifier:main',
+            'producer = gesture_recognition.producer:main'
         ]
     }
 )

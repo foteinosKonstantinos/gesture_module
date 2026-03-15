@@ -5,6 +5,7 @@ from nav_msgs.msg import Odometry
 from PIL import Image as PILImage
 import numpy as np
 from rclpy.executors import ExternalShutdownException
+import time
 
 PATH = "/app"
 
@@ -15,10 +16,10 @@ def euler_to_quaternion(roll, pitch, yaw):
     qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
     return [qx, qy, qz, qw]
 
-class Creator(Node):
+class Producer(Node):
 
     def __init__(self,path=PATH):
-        super().__init__("creator_node")
+        super().__init__("producer_node")
         
         self.__color_publisher=self.create_publisher(
             msg_type = SensorImage,
@@ -55,6 +56,9 @@ class Creator(Node):
         idx = 0
 
         while True:
+
+            time.sleep(1)
+
             self.get_logger().info(f"Exporting ...")
             
             depth = np.asarray(PILImage.open(f"{path}/{depth_frames[idx]}"),dtype=np.uint16)
@@ -100,7 +104,7 @@ class Creator(Node):
 def main():
     try:
         rclpy.init()
-        rclpy.spin(node=Creator())
+        rclpy.spin(node=Producer())
     except (ExternalShutdownException, KeyboardInterrupt):
         pass
 
