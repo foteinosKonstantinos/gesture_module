@@ -211,7 +211,7 @@ class Gesture_Classifier(Node):
         norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
         det_x = cam_x + det_distance * orientation_x / norm
         det_y = cam_y + det_distance * orientation_y / norm
-        return self.__xy_to_global_position(x=det_x, y=det_y)
+        return self.__xy_to_global_position(x=det_x, y=det_y), det_x, det_y
 
 
     def __xy_to_global_position(self, x, y) -> list:
@@ -276,7 +276,9 @@ class Gesture_Classifier(Node):
             See README
         '''
 
-        assert color_image.height == depth_map.height and color_image.width == depth_map.width
+        if color_image is None or depth_map is None or intrinsics is None or global_position is None or odometry is None or color_image.height != depth_map.height or color_image.width != depth_map.width:
+            self.get_logger().error("Invalid input (e.g. RGBD frames dimensions may mismatch).")
+            return
 
         self.__register_initial_global_position(global_position)
         angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"] # in radians
@@ -306,15 +308,21 @@ class Gesture_Classifier(Node):
                 argmin_idx = idx
         
         if argmin_u is None:
+            self.get_logger().info("No detected person.")
             return
         
         relative_position = self.__estimate_relative_location(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-        det_global_position = self.__estimate_absolute_location(min_depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+        det_global_position, x, y = self.__estimate_absolute_location(min_depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         
         prediction = self.__predict_from_image(color_image_array)
+        
+        self.get_logger().info(f"Detection position: {det_global_position} (GPS) [or ({x},{y}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
+
         if prediction["confidence"] < self.__classification_threshold:
-            self.get_logger().warning(f"Detection position: {det_global_position} Class: {prediction['class']} Depth: {min_depth} - LOW CONFIDENCE ({prediction['confidence']}<{self.__classification_threshold})")
+            self.get_logger().warn("Low confidence.")
             return
+
+        self.get_logger().info("High confidence, actions are triggered.")
         
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
@@ -328,7 +336,7 @@ class Gesture_Classifier(Node):
                     "properties": {
                         "class":prediction["class"],
                         "confidence":prediction["confidence"],
-                        "depth":depth,
+                        "depth":min_depth,
                         "id":self.__counter,
                         "timestamp":self.get_clock().now().nanoseconds,
                         "keypoints_and_depths": all_keypoints[argmin_idx],
@@ -338,7 +346,6 @@ class Gesture_Classifier(Node):
             ]
         })))
         self.__counter += 1
-        self.get_logger().info(f"PUBLISHED: Detection position: {det_global_position} Class: {prediction['class']} with confidence {prediction['confidence']}>={self.__classification_threshold} at depth {depth}")
 
 
 def main():
