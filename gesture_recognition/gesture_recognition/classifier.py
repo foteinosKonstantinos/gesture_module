@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import torchvision
 from ultralytics import YOLO
+from torch.nn.functional import softmax
 
 EARTH_RADIUS = 6378137.0 # in meters
 
@@ -103,7 +104,8 @@ class Gesture_Classifier(Node):
         # self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
         self.__device = "cuda" if torch.cuda.is_available() else "cpu"
         self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
-        self.__classifier.load_state_dict(torch.load("/content/efficientnetb0_color_pretrained.pt",map_location=torch.device(self.__device)))
+        self.__classifier.load_state_dict(torch.load(classifier,map_location=torch.device(self.__device)))
+        self.__classifier = self.__classifier.to(self.__device)
         self.__classification_threshold = classification_threshold
         self.__pose_estimator = YOLO(pose_estimator)
         self.__pose_estimation_threshold = pose_estimation_threshold
@@ -206,7 +208,7 @@ class Gesture_Classifier(Node):
             latitude:       GPS (degrees)
         '''
         cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon) # in mm
-        norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2) * 1000 # in mm TODO !!!
+        norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
         det_x = cam_x + det_distance * orientation_x / norm
         det_y = cam_y + det_distance * orientation_y / norm
         return self.__xy_to_global_position(x=det_x, y=det_y)
@@ -243,7 +245,7 @@ class Gesture_Classifier(Node):
         
     def __predict_from_image(self, image, classes=CLASSES):
         # probabilities = self.__recognition_session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})[0]
-        probabilities = self.__classifier(torch.as_tensor(cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))).to(self.__device))[0].detach().cpu().numpy()
+        probabilities = softmax(self.__classifier(torch.as_tensor(cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))).to(self.__device))[0]).detach().cpu().numpy()
         argmax = probabilities.argmax()
         pred_class = classes[argmax]
         confidence = probabilities[argmax].item()
@@ -277,7 +279,7 @@ class Gesture_Classifier(Node):
         assert color_image.height == depth_map.height and color_image.width == depth_map.width
 
         self.__register_initial_global_position(global_position)
-        angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
+        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"] # in radians
         self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm) and angle {angle} (radians)")
         
         color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
@@ -311,7 +313,7 @@ class Gesture_Classifier(Node):
         
         prediction = self.__predict_from_image(color_image_array)
         if prediction["confidence"] < self.__classification_threshold:
-            self.get_logger().warning(f"Detection position: {det_global_position} Class: {prediction['class']} - LOW CONFIDENCE (<{self.__classification_threshold})")
+            self.get_logger().warning(f"Detection position: {det_global_position} Class: {prediction['class']} Depth: {min_depth} - LOW CONFIDENCE ({prediction['confidence']}<{self.__classification_threshold})")
             return
         
         self.__publisher.publish(String(data=json.dumps({
@@ -336,7 +338,7 @@ class Gesture_Classifier(Node):
             ]
         })))
         self.__counter += 1
-        self.get_logger().info(f"Detection position: {det_global_position} Class: {prediction['class']} with confidence {prediction['confidence']} at depth {depth}")
+        self.get_logger().info(f"PUBLISHED: Detection position: {det_global_position} Class: {prediction['class']} with confidence {prediction['confidence']}>={self.__classification_threshold} at depth {depth}")
 
 
 def main():
