@@ -22,7 +22,6 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 CLASSIFICATION_THRESHOLD = 0.99
 POSE_ESTIMATION_THRESHOLD = 0.9
 
-FOCAL_LENGTH = 1 # typical values of focal length are <10 mm for ordinary cameras; therefore, the impact on the final results is negligible
 NAV_TOPIC = "/fix"
 ODOM_TOPIC = "/dog_odom"
 DEPTH_TOPIC = "/camera_front/depth"
@@ -175,7 +174,7 @@ class Gesture_Classifier(Node):
             the position in 3D space (in mm)
         '''
         p_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
-        p_3D = np.linalg.inv(intrinsics) @ (depth * p_2D_h)
+        p_3D = depth * (np.linalg.inv(intrinsics) @ p_2D_h)
         return p_3D
 
 
@@ -191,8 +190,8 @@ class Gesture_Classifier(Node):
             longitude:      GPS (degrees)
             latitude:       GPS (degrees)
         '''
-        cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon)
-        norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2) * 1000 # in mm
+        cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon) # in mm
+        norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2) * 1000 # in mm TODO !!!
         det_x = cam_x + det_distance * orientation_x / norm
         det_y = cam_y + det_distance * orientation_y / norm
         return self.__xy_to_global_position(x=det_x, y=det_y)
@@ -206,8 +205,8 @@ class Gesture_Classifier(Node):
             longitude:  GPS (degrees)
             latitude:   GPS (degrees)
         '''
-        lat = self.__init_latitude + (y*1000 / EARTH_RADIUS) * (180.0 / math.pi)
-        lon = self.__init_longitude + (x*1000 / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
+        lat = self.__init_latitude + ((y/1000) / EARTH_RADIUS) * (180.0 / math.pi)
+        lon = self.__init_longitude + ((x/1000) / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
         return lon, lat
     
 
@@ -215,9 +214,9 @@ class Gesture_Classifier(Node):
         '''
         The inverse of the previous
         '''
-        y = (lat - self.__init_latitude) * (math.pi / 180.0) * EARTH_RADIUS
-        x = (lon - self.__init_longitude) * (math.pi / 180.0) * (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))
-        return x/1000, y/1000 # (in mm)
+        y = (lat - self.__init_latitude) * (math.pi / 180.0) * EARTH_RADIUS # in meters
+        x = (lon - self.__init_longitude) * (math.pi / 180.0) * (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude))) # in meters
+        return x * 1000, y * 1000 # (in mm)
 
 
     def __register_initial_global_position(self, position:NavSatFix):
@@ -239,10 +238,11 @@ class Gesture_Classifier(Node):
     
 
     def __quaternion_to_rpy(self, qx, qy, qz, qw):
+        # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
         return {
-            "roll": math.atan2(2.0*(qx*qy + qw*qz), qw*qw + qx*qx - qy*qy - qz*qz),
-            "pitch":math.asin(-2.0*(qx*qz - qw*qy)),
-            "yaw":  math.atan2(2.0*(qy*qz + qw*qx), qw*qw - qx*qx - qy*qy + qz*qz)
+            "roll": math.atan2(2.0*(qw*qx + qy*qz), 1.0 - 2.0*(qx*qx + qy*qy)),
+            "pitch": math.asin(2.0*(qw*qy - qz*qx)),
+            "yaw": math.atan2(2.0*(qw*qz + qx*qy), 1.0 - 2.0*(qy*qy + qz*qz))
         }
 
 
@@ -261,7 +261,8 @@ class Gesture_Classifier(Node):
         assert color_image.height == depth_map.height and color_image.width == depth_map.width
 
         self.__register_initial_global_position(global_position)
-        self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
+        angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
+        self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm) and angle {angle} (radians)")
         
         color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
         depth_map_array = np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32).reshape((depth_map.height, depth_map.width, 1)) # H x W x 1
@@ -285,9 +286,7 @@ class Gesture_Classifier(Node):
 
         
         relative_position = self.__estimate_relative_location(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-
-        angle = math.radians(self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"])
-        det_global_position = self.__estimate_absolute_location(depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+        det_global_position = self.__estimate_absolute_location(min_depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
         
         prediction = self.__predict_from_image(color_image_array)
         if prediction["confidence"] < self.__classification_threshold:
