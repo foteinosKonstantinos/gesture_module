@@ -47,8 +47,8 @@ class Producer(Node):
             qos_profile = 10
         )
 
-        depth_frames = ["low_Operation-finished_675_depth.png","low_Operation-finished_675_depth.png"]
-        rgb_frames = ["low_Operation-finished_675_color.png","dummy.png"]
+        depth_frames = ["low_Operation-finished_675_depth.png","low_Operation-finished_675_depth.png","low_Operation-finished_675_depth.png"]
+        rgb_frames = ["low_Operation-finished_675_color.png","dummy.png","high_Evacuate-the-area_355_color.png"]
 
         assert len(depth_frames) == len(rgb_frames)
 
@@ -63,7 +63,7 @@ class Producer(Node):
             depth_path = f"{path}/{depth_frames[idx]}"
             color_path = f"{path}/{rgb_frames[idx]}"
             self.get_logger().info(f"Exporting {depth_path} and {color_path} ...")
-            idx = (idx + 1) % 2
+            idx = (idx + 1) % 3
 
             depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
             color = np.asarray(PILImage.open(color_path).convert("RGB"))

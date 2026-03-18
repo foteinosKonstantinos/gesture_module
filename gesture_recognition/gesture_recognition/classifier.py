@@ -9,14 +9,17 @@ import cv2
 import json
 import math
 import numpy as np
-import onnxruntime
+# import onnxruntime
+import torch
+import torchvision
 from ultralytics import YOLO
 
 EARTH_RADIUS = 6378137.0 # in meters
 
 # Deployment details
 
-ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
+# ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
+CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnetb0_color_pretrained.pt"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 
 CLASSIFICATION_THRESHOLD = 0.99
@@ -69,16 +72,17 @@ KEYPOINTS = [
 class Gesture_Classifier(Node):
 
     def __init__(self, 
-                 classifier_onnx:str=ONNX_MODEL, 
-                 pose_estimator:str=POSE_ESTIMATOR, 
-                 color_topic:str=RGB_TOPIC, 
-                 depth_topic:str=DEPTH_TOPIC, 
-                 camera_info:str=CAMERA_INFO, 
-                 nav_fix_topic:str=NAV_TOPIC, 
-                 odom_topic:str=ODOM_TOPIC, 
-                 output_topic:str=OUTPUT_TOPIC,
-                 classification_threshold:float = CLASSIFICATION_THRESHOLD,
-                 pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD):
+                # classifier_onnx:str=ONNX_MODEL, 
+                classifier:str=CLASSIFICATION_MODEL,
+                pose_estimator:str=POSE_ESTIMATOR, 
+                color_topic:str=RGB_TOPIC, 
+                depth_topic:str=DEPTH_TOPIC, 
+                camera_info:str=CAMERA_INFO, 
+                nav_fix_topic:str=NAV_TOPIC, 
+                odom_topic:str=ODOM_TOPIC, 
+                output_topic:str=OUTPUT_TOPIC,
+                classification_threshold:float = CLASSIFICATION_THRESHOLD,
+                pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD):
         super().__init__("gesture_classifier")
         ApproximateTimeSynchronizer(
             fs=[
@@ -96,14 +100,17 @@ class Gesture_Classifier(Node):
             topic = output_topic,
             qos_profile = 10
         )
-        self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
+        # self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
+        self.__device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
+        self.__classifier.load_state_dict(torch.load("/content/efficientnetb0_color_pretrained.pt",map_location=torch.device(self.__device)))
         self.__classification_threshold = classification_threshold
         self.__pose_estimator = YOLO(pose_estimator)
         self.__pose_estimation_threshold = pose_estimation_threshold
         self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
-        self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier_onnx}.")
+        self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
 
 
     def __detect_keypoints(self, image, depth_map, names = KEYPOINTS) -> list[dict]:
@@ -146,21 +153,29 @@ class Gesture_Classifier(Node):
             v:      average v (in pixels)
             c:      average confidence ([0,1])
         '''
-        d = u = v = c = total = 0
-        for keypoint_name in keypoints.keys():
-            if keypoints[keypoint_name][3] == 0:
-                continue
-            total += 1
-            u += keypoints[keypoint_name][0]
-            v += keypoints[keypoint_name][1]
-            c += keypoints[keypoint_name][2]
-            d += keypoints[keypoint_name][3]
-        d /= total
-        u /= total
-        v /= total
-        c /= total
-        return d, u, v, c
-
+        # d = u = v = c = total = 0
+        # for keypoint_name in keypoints.keys():
+        #     if keypoints[keypoint_name][3] == 0:
+        #         continue
+        #     total += 1
+        #     u += keypoints[keypoint_name][0]
+        #     v += keypoints[keypoint_name][1]
+        #     c += keypoints[keypoint_name][2]
+        #     d += keypoints[keypoint_name][3]
+        # d /= total
+        # u /= total
+        # v /= total
+        # c /= total
+        # return d, u, v, c
+        ls = keypoints["Left Shoulder"]
+        rs = keypoints["Right Shoulder"]
+        if ls[3] !=0 and rs[3] !=0:
+            u = (ls[0]+rs[0])/2
+            v = (ls[1]+rs[1])/2
+            c = (ls[2]+rs[2])/2
+            d = (ls[3]+rs[3])/2
+            return d, u, v, c
+        return None
 
     def __estimate_relative_location(self, u, v, depth, intrinsics) -> np.ndarray:
         '''
@@ -227,8 +242,9 @@ class Gesture_Classifier(Node):
 
         
     def __predict_from_image(self, image, classes=CLASSES):
-        probabilities = self.__recognition_session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})[0]
-        argmax = np.asarray(probabilities).argmax()
+        # probabilities = self.__recognition_session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})[0]
+        probabilities = self.__classifier(torch.as_tensor(cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))).to(self.__device))[0].detach().cpu().numpy()
+        argmax = probabilities.argmax()
         pred_class = classes[argmax]
         confidence = probabilities[argmax].item()
         return {
@@ -277,13 +293,18 @@ class Gesture_Classifier(Node):
         argmin_idx = None
         min_depth = math.inf
         for idx, single_person_keypoints in enumerate(all_keypoints):
-            depth, u, v, c = self.__aggregate(single_person_keypoints)
+            agg = self.__aggregate(single_person_keypoints)
+            if agg is None:
+                continue
+            depth, u, v, c = agg[0], agg[1], agg[2], agg[3]
             if depth < min_depth:
                 argmin_u = u
                 argmin_v = v
                 min_depth = depth
                 argmin_idx = idx
-
+        
+        if argmin_u is None:
+            return
         
         relative_position = self.__estimate_relative_location(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
         det_global_position = self.__estimate_absolute_location(min_depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
