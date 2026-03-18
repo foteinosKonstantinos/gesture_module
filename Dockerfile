@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -22,5 +22,5 @@ RUN apt-get install -y python3 python3-pip nano
 RUN apt clean && apt autoremove --purge
 RUN pip install onnxruntime opencv-python numpy && pip cache purge
 
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && pip cache purge
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 && pip cache purge
 RUN pip install --no-cache-dir ultralytics && pip cache purge

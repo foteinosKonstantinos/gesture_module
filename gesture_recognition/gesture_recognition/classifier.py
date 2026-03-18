@@ -127,7 +127,7 @@ class Gesture_Classifier(Node):
         for person in range(len(result)):
             keypoints.append(dict({}))
             for i in range(len(names)):
-                uvcd:list = result[person][i][[0,1]].numpy().astype(int).tolist()
+                uvcd:list = result[person][i][[0,1]].cpu().numpy().astype(int).tolist()
                 uvcd.append(result[person][i][2].item())
                 try:
                     uvcd.append(depth_map[uvcd[1],uvcd[0]].item())

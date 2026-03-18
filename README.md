@@ -205,7 +205,7 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 ```
 
-**Important:** No GPU support. No messages are produced if the pose estimator fails and/or the gesture prediction confidence is less than a threshold.
+**Important:** No messages are produced if the pose estimator fails and/or the gesture prediction confidence is less than a threshold.
 
 
 ### Instructions for setup (Docker)
@@ -225,9 +225,9 @@ sudo docker build -t gesture_container .
 > sudo docker rmi gesture_container
 > ```
 
-To create & enter the container (the `--net host` is mandatory to enable access to outside topics):
+To create & enter the container (the `--net host` is mandatory to enable access to outside topics and `--gpus all` for accessing the available GPUs):
 ```bash
-sudo docker run --net host -it gesture_container /bin/bash
+sudo docker run --net host --gpus all -it gesture_container /bin/bash
 ```
 
 To view the running containers:
