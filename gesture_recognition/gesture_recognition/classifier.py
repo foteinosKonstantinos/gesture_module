@@ -1,10 +1,12 @@
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.action import ActionClient
 from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 from nav_msgs.msg import Odometry
 from message_filters import Subscriber, ApproximateTimeSynchronizer
+from robal_interfaces.action import ApproachPerson, ExploreArea, ExploreAreaGNSS, NavigateTo, NavigateToGNSS, Trigger
 import cv2
 import json
 import math
@@ -112,6 +114,20 @@ class Gesture_Classifier(Node):
         self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
+        
+        self.__approach_person_client = ActionClient(self, ApproachPerson, "approach_person")
+        self.__explore_area_client = ActionClient(self, ExploreArea, "explore_area")
+        self.__explore_area_gnss_client = ActionClient(self, ExploreAreaGNSS, "explore_area_gnss")
+        self.__navigate_to_client = ActionClient(self, NavigateTo, "navigate_to")
+        self.__navigate_to_gnss_client = ActionClient(self, NavigateToGNSS, "navigate_to_gnss")
+        
+
+
+        self.__return_trigger_client = ActionClient(self, Trigger, "/local/trigger_return_to_base")
+        self.__fetch_trigger_client = ActionClient(self, Trigger, "/local/trigger_return_base_fetch")
+        self.__freeze_trigger_client = ActionClient(self, Trigger, "/local/trigger_freeze")
+        self.__emergency_trigger_client = ActionClient(self, Trigger, "/global/trigger_emergency")
+        
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
 
 
@@ -264,6 +280,61 @@ class Gesture_Classifier(Node):
         }
 
 
+    def __action_calls(self, command:str, **args):
+        # https://docs.ros.org/en/foxy/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html
+        
+        
+        # WRONG: https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
+        
+        if command == "come-to-me":
+            pass
+        
+        elif command == "ok-to-go":
+            goal_msg = Trigger.Goal()
+            goal_msg.activate = False
+            self.__freeze_trigger_client.wait_for_server(goal_msg)
+            self.__freeze_trigger_client.send_goal_async(goal_msg)
+        
+
+        elif command == "move-away-from-here":
+            pass
+        
+        
+        elif command == "operation-finished":
+            goal_msg = Trigger.Goal()
+            goal_msg.activate = True
+            self.__return_trigger_client.wait_for_server(goal_msg)
+            self.__return_trigger_client.send_goal_async(goal_msg)
+        
+
+        elif command == "freeze":
+            goal_msg = Trigger.Goal()
+            goal_msg.activate = True
+            self.__freeze_trigger_client.wait_for_server(goal_msg)
+            self.__freeze_trigger_client.send_goal_async(goal_msg)
+        
+        
+        elif command == "emergency-situation":
+            goal_msg = Trigger.Goal()
+            goal_msg.activate = True
+            self.__emergency_trigger_client.wait_for_server(goal_msg)
+            self.__emergency_trigger_client.send_goal_async(goal_msg)
+
+        
+        elif command == "i-need-help":
+            pass
+        elif command == "evacuate-the-area":
+            pass
+        elif command == "i-lost-connection":
+            pass
+
+        elif command == "fetch-a-gas-mask" or command == "fetch-a-shovel" or command == "fetch-an-axe":
+            goal_msg = Trigger.Goal()
+            goal_msg.activate = True
+            self.__fetch_trigger_client.wait_for_server(goal_msg)
+            self.__fetch_trigger_client.send_goal_async(goal_msg)
+
+
     def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix, odometry:Odometry):
         '''
         Parameters:
@@ -324,6 +395,13 @@ class Gesture_Classifier(Node):
 
         self.get_logger().info("High confidence, actions are triggered.")
         
+        
+        
+        self.__action_calls(prediction['class'])
+        
+
+
+
         self.__publisher.publish(String(data=json.dumps({
             "type": "FeatureCollection",
             "features":[

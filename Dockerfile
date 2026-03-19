@@ -20,7 +20,8 @@ SHELL ["/bin/bash", "-c"]
 
 RUN apt-get install -y python3 python3-pip nano
 RUN apt clean && apt autoremove --purge
-RUN pip install onnxruntime opencv-python numpy && pip cache purge
+# onnxruntime
+RUN pip install opencv-python numpy && pip cache purge
 
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 && pip cache purge
 RUN pip install --no-cache-dir ultralytics && pip cache purge
