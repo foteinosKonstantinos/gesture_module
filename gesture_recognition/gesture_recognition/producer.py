@@ -173,10 +173,11 @@ class Producer(Node):
             camera_to_base.transform.translation.x = 0.0
             camera_to_base.transform.translation.y = 0.0
             camera_to_base.transform.translation.z = 0.0
-            camera_to_base.transform.rotation.x = 0.0
-            camera_to_base.transform.rotation.y = 0.0
-            camera_to_base.transform.rotation.z = 0.0
-            camera_to_base.transform.rotation.w = 1.0
+            q_camera = euler_to_quaternion(roll=0, pitch=np.pi/2, yaw=0)
+            camera_to_base.transform.rotation.x = float(q_camera[0].item())
+            camera_to_base.transform.rotation.y = float(q_camera[1].item())
+            camera_to_base.transform.rotation.z = float(q_camera[2].item())
+            camera_to_base.transform.rotation.w = float(q_camera[3].item())
             self.__broadcaster.sendTransform(camera_to_base)
 
             x_mm += 1000

@@ -17,7 +17,7 @@ Transitions between coordinate systems:
 
 > ***TODO: Integrate with UPC***
 
-`docker exec -it 47092f87b9c7 bash -c "source /opt/ros/humble/setup.bash;source ./install/local_setup.bash;ros2 run gesture_recognition producer"`
+`docker exec -it <container ID> bash -c "source /opt/ros/humble/setup.bash;source ./install/local_setup.bash;ros2 run gesture_recognition producer"`
 
 ### Provided interface
 
