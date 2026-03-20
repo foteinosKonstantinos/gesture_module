@@ -47,10 +47,44 @@ class Producer(Node):
             qos_profile = 10
         )
 
-        depth_frames = ["low_Operation-finished_675_depth.png","low_Operation-finished_675_depth.png","low_Operation-finished_675_depth.png"]
-        rgb_frames = ["low_Operation-finished_675_color.png","dummy.png","high_Evacuate-the-area_355_color.png"]
+        depth_frames = [
+            "frames/high_Come-to-me_2_depth.png",
+            "frames/high_Come-to-me_98_depth.png",
+            "frames/high_Come-to-me_1214_depth.png",
+            "frames/high_Emergency-situation_101_depth.png",
+            "frames/high_Evacuate-the-area_175_depth.png",
+            "frames/high_Fetch-a-gas-mask_49_depth.png",
+            "frames/high_Fetch-a-gas-mask_181_depth.png",
+            "frames/high_Fetch-a-shovel_33_depth.png",
+            "frames/high_Freeze_16_depth.png",
+            "frames/high_Freeze_40_depth.png",
+            "frames/high_Freeze_184_depth.png",
+            "frames/high_Ok-to-go_203_depth.png",
+            "frames/high_Ok-to-go_263_depth.png",
+            "frames/high_Ok-to-go_263_depth.png", # dummy
+            "frames/high_Ok-to-go_263_depth.png"  # dummy
+        ]
 
-        assert len(depth_frames) == len(rgb_frames)
+        rgb_frames = [
+            "frames/high_Come-to-me_2_color.png",
+            "frames/high_Come-to-me_98_color.png",
+            "frames/high_Come-to-me_1214_color.png",
+            "frames/high_Emergency-situation_101_color.png",
+            "frames/high_Evacuate-the-area_175_color.png",
+            "frames/high_Fetch-a-gas-mask_49_color.png",
+            "frames/high_Fetch-a-gas-mask_181_color.png",
+            "frames/high_Fetch-a-shovel_33_color.png",
+            "frames/high_Freeze_16_color.png",
+            "frames/high_Freeze_40_color.png",
+            "frames/high_Freeze_184_color.png",
+            "frames/high_Ok-to-go_203_color.png",
+            "frames/high_Ok-to-go_263_color.png",
+            "frames/multi_person.png",
+            "frames/no_person.png"
+        ]
+
+        total = len(rgb_frames)
+        assert len(depth_frames) == total
 
         c = 0.0
         idx = 0
@@ -62,8 +96,8 @@ class Producer(Node):
             
             depth_path = f"{path}/{depth_frames[idx]}"
             color_path = f"{path}/{rgb_frames[idx]}"
-            self.get_logger().info(f"Exporting {depth_path} and {color_path} ...")
-            idx = (idx + 1) % 3
+            self.get_logger().info(f"Publishing {color_path} and {depth_path}...")
+            idx = (idx + 1) % total
 
             depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
             color = np.asarray(PILImage.open(color_path).convert("RGB"))

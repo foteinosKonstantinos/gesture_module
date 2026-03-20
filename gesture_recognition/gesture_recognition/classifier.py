@@ -1,10 +1,13 @@
 import rclpy
+import rclpy.duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
+import tf2_ros
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PointStamped
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from robal_interfaces.action import ApproachPerson, ExploreArea, ExploreAreaGNSS, NavigateTo, NavigateToGNSS, Trigger
 import cv2
@@ -27,6 +30,7 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 
 CLASSIFICATION_THRESHOLD = 0.99
 POSE_ESTIMATION_THRESHOLD = 0.9
+DEPTH_THRESHOLD = 7000 # in mm
 
 NAV_TOPIC = "/fix"
 ODOM_TOPIC = "/dog_odom"
@@ -75,17 +79,19 @@ KEYPOINTS = [
 class Gesture_Classifier(Node):
 
     def __init__(self, 
-                # classifier_onnx:str=ONNX_MODEL, 
-                classifier:str=CLASSIFICATION_MODEL,
-                pose_estimator:str=POSE_ESTIMATOR, 
-                color_topic:str=RGB_TOPIC, 
-                depth_topic:str=DEPTH_TOPIC, 
-                camera_info:str=CAMERA_INFO, 
-                nav_fix_topic:str=NAV_TOPIC, 
-                odom_topic:str=ODOM_TOPIC, 
-                output_topic:str=OUTPUT_TOPIC,
-                classification_threshold:float = CLASSIFICATION_THRESHOLD,
-                pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD):
+            # classifier_onnx:str=ONNX_MODEL, 
+            classifier:str=CLASSIFICATION_MODEL,
+            pose_estimator:str=POSE_ESTIMATOR, 
+            color_topic:str=RGB_TOPIC, 
+            depth_topic:str=DEPTH_TOPIC, 
+            camera_info:str=CAMERA_INFO, 
+            nav_fix_topic:str=NAV_TOPIC, 
+            odom_topic:str=ODOM_TOPIC, 
+            output_topic:str=OUTPUT_TOPIC,
+            classification_threshold:float = CLASSIFICATION_THRESHOLD,
+            pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD,
+            depth_threshold:float = DEPTH_THRESHOLD
+        ):
         super().__init__("gesture_classifier")
         ApproximateTimeSynchronizer(
             fs=[
@@ -111,9 +117,12 @@ class Gesture_Classifier(Node):
         self.__classification_threshold = classification_threshold
         self.__pose_estimator = YOLO(pose_estimator)
         self.__pose_estimation_threshold = pose_estimation_threshold
+        self.__depth_threshold = depth_threshold
         self.__counter = 0
         self.__init_latitude = None
         self.__init_longitude = None
+        self.__tf_buffer = tf2_ros.Buffer()
+        self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)
         
         self.__approach_person_client = ActionClient(self, ApproachPerson, "approach_person")
         self.__explore_area_client = ActionClient(self, ExploreArea, "explore_area")
@@ -195,43 +204,62 @@ class Gesture_Classifier(Node):
             return d, u, v, c
         return None
 
-    def __estimate_relative_location(self, u, v, depth, intrinsics) -> np.ndarray:
+    def __uvd_to_rel_xyz(self, u, v, depth, intrinsics) -> np.ndarray:
         '''
-        Backprojects a point to 3D space
+        uvd -> rel_xyz (Backprojects a point to 3D space)
         Parameters:
             u:          x' (horizontal) (in pixels)
             v:          y' (vertical) (in pixels)
             depth:      disantce from the optical center (in mm)
             intrinsics: camera intrinsics (in pixels)
         Returns:
-            the position in 3D space (in mm)
+            the relative position in 3D space (in mm) w.r.t. to camera frame
         '''
         p_2D_h = np.asarray([u, v, 1]) # homogeneous coordinates
         p_3D = depth * (np.linalg.inv(intrinsics) @ p_2D_h)
         return p_3D
 
+    def __rel_xyz_to_base_xyz(self, xyz:np.ndarray) -> tuple[float]:
+        msg = PointStamped()
+        msg.header.frame_id = "camera_depth_frame"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.point.x = xyz[0].item()
+        msg.point.y = xyz[1].item()
+        msg.point.z = xyz[2].item()
+        transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=0.2))
+        return float(transform.point.x),float(transform.point.y),float(transform.point.z)
 
-    def __estimate_absolute_location(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
-        '''
-        Parameters:
-            det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera) (in mm)
-            cam_lat:        Current global latitude of the camera/robot
-            cam_lon:        Current global longitude of the camera/robot
-            orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
-            orientation_y:  The same with orientation_x
-        Returns:
-            longitude:      GPS (degrees)
-            latitude:       GPS (degrees)
-        '''
-        cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon) # in mm
-        norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
-        det_x = cam_x + det_distance * orientation_x / norm
-        det_y = cam_y + det_distance * orientation_y / norm
-        return self.__xy_to_global_position(x=det_x, y=det_y), det_x, det_y
+    def __base_xyz_to_abs_xyz(self, xyz:tuple[float]) -> tuple[float]:
+        msg = PointStamped()
+        msg.header.frame_id = "base_link"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.point.x = xyz[0]
+        msg.point.y = xyz[1]
+        msg.point.z = xyz[2]
+        transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=0.2)) # map or odom
+        return float(transform.point.x),float(transform.point.y),float(transform.point.z)
 
+    # def __get_GPS(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
+    #     '''
+    #     Parameters:
+    #         det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera) (in mm)
+    #         cam_lat:        Current global latitude of the camera/robot
+    #         cam_lon:        Current global longitude of the camera/robot
+    #         orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
+    #         orientation_y:  The same with orientation_x
+    #     Returns:
+    #         longitude:      GPS (degrees)
+    #         latitude:       GPS (degrees)
+    #     '''
+    #     cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon) # in mm
+    #     norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
+    #     det_x = cam_x + det_distance * orientation_x / norm
+    #     det_y = cam_y + det_distance * orientation_y / norm
+    #     return self.__xy_to_global_position(x=det_x, y=det_y), det_x, det_y
 
-    def __xy_to_global_position(self, x, y) -> list:
+    def __abs_xy_to_gps(self, x, y) -> tuple[float]:
         '''
+        abs_xy -> GPS
         Parameters:
             x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels (in mm)
         Returns:
@@ -240,19 +268,19 @@ class Gesture_Classifier(Node):
         '''
         lat = self.__init_latitude + ((y/1000) / EARTH_RADIUS) * (180.0 / math.pi)
         lon = self.__init_longitude + ((x/1000) / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
-        return lon, lat
+        return float(lon), float(lat)
     
 
-    def __global_to_xy_position(self, lat, lon):
+    def __gps_to_abs_xy(self, lat, lon) -> tuple[float]:
         '''
-        The inverse of the previous
+        GPS -> abs_xy (the inverse of the previous)
         '''
         y = (lat - self.__init_latitude) * (math.pi / 180.0) * EARTH_RADIUS # in meters
         x = (lon - self.__init_longitude) * (math.pi / 180.0) * (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude))) # in meters
-        return x * 1000, y * 1000 # (in mm)
+        return float(x * 1000), float(y * 1000) # (in mm)
 
 
-    def __register_initial_global_position(self, position:NavSatFix):
+    def __register_initial_gps(self, position:NavSatFix):
         if self.__init_latitude is None or self.__init_longitude is None:
             self.__init_latitude = position.latitude
             self.__init_longitude = position.longitude
@@ -351,16 +379,17 @@ class Gesture_Classifier(Node):
             self.get_logger().error("Invalid input (e.g. RGBD frames dimensions may mismatch).")
             return
 
-        self.__register_initial_global_position(global_position)
-        angle = self.__quaternion_to_rpy(odometry.pose.pose.orientation.x,odometry.pose.pose.orientation.y,odometry.pose.pose.orientation.z,odometry.pose.pose.orientation.w)["yaw"] # in radians
-        self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__global_to_xy_position(lat=global_position.latitude, lon=global_position.longitude)} (mm) and angle {angle} (radians)")
+        self.__register_initial_gps(global_position)
+        self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
         
         color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
         depth_map_array = np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32).reshape((depth_map.height, depth_map.width, 1)) # H x W x 1
         
         all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
+        self.get_logger().info(f"{len(all_keypoints)} detected humans")
 
         if len(all_keypoints) == 0:
+            # self.get_logger().info("No detected person")
             return
         
         argmin_u = None
@@ -378,16 +407,21 @@ class Gesture_Classifier(Node):
                 min_depth = depth
                 argmin_idx = idx
         
-        if argmin_u is None:
-            self.get_logger().info("No detected person.")
+        assert argmin_u is not None
+        
+        if min_depth > self.__depth_threshold:
+            self.get_logger().warn(f"Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
             return
         
-        relative_position = self.__estimate_relative_location(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-        det_global_position, x, y = self.__estimate_absolute_location(min_depth, global_position.latitude, global_position.longitude, math.cos(angle), math.sin(angle))
+        
+        rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+        base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz)
+        abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz)
+        gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1])
         
         prediction = self.__predict_from_image(color_image_array)
         
-        self.get_logger().info(f"Detection position: {det_global_position} (GPS) [or ({x},{y}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
+        self.get_logger().info(f"Detection position: {gps} (GPS) [or ({abs_xyz}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
         if prediction["confidence"] < self.__classification_threshold:
             self.get_logger().warn("Low confidence.")
@@ -397,7 +431,7 @@ class Gesture_Classifier(Node):
         
         
         
-        self.__action_calls(prediction['class'])
+        self.__action_calls(prediction["class"])
         
 
 
@@ -409,7 +443,7 @@ class Gesture_Classifier(Node):
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
-                        "coordinates": det_global_position
+                        "coordinates": list(gps)
                     },
                     "properties": {
                         "class":prediction["class"],
@@ -417,8 +451,7 @@ class Gesture_Classifier(Node):
                         "depth":min_depth,
                         "id":self.__counter,
                         "timestamp":self.get_clock().now().nanoseconds,
-                        "keypoints_and_depths": all_keypoints[argmin_idx],
-                        "relative_position": relative_position.tolist()
+                        "keypoints_and_depths": all_keypoints[argmin_idx]
                     }
                 }
             ]

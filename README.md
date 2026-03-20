@@ -6,7 +6,14 @@
 
 ### General information
 
-This module takes as input aligned RGBD frames and the (global) pose of the camera (i.e. orientation and 2D position) at that timestamp (approximately) and performs gesture classication and pose estimation simultaneously; if a gesture is detected with high confidence, it publishes, for a particular human considered to be the signer (e.g. the closest one), the pixel coordinates (uv) of her/his keypoints (e.g. ankles, shoulders), their depth and estimation confidence. Further, it estimates the uv position and depth of his/her by getting the average of the per-keypoint uv and depth. This information is utilized to predict the (global) longitude and latitude coordinates.
+This module takes as input aligned RGBD frames and the (global) pose of the camera (i.e. orientation and 2D position) at that timestamp (approximately) and performs gesture classication and pose estimation simultaneously; if a gesture is detected with high confidence and sufficiently close to the camera, it publishes, for a particular human considered to be the signer (e.g. the closest one), the pixel coordinates (uv) of her/his keypoints (e.g. ankles, shoulders), their depth and estimation confidence. Further, it estimates the uv position and depth of his/her by getting the average of the per-keypoint uv and depth. This information is utilized to predict the (global) longitude and latitude coordinates. Robot actions are triggered.
+
+Transitions between coordinate systems:
+- uvd: uv (image plane) & depth
+- rel_xyz: (optical) camera frame xyz (backprojection) (camera_depth_frame)
+- base_xyz: base link
+- gps: GPS or global or absolute (longitude, latitude)
+- abs_xy: Absolute xy (i.e. the "tangent" plane, oriented by the meridians and parallels)
 
 > ***TODO: Integrate with UPC***
 
@@ -261,6 +268,8 @@ Activate ROS (Humble) (zsh, bash, ... according to your terminal):
 ```bash
 source /opt/ros/humble/setup.bash
 ```
+
+Clone and build the UPC interface: https://gitlab.com/asantamarianavarro/code/projects/triffid/robal_interfaces.
 
 Build the package:
 ```bash
