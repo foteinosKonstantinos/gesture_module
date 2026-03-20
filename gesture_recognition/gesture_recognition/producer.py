@@ -105,10 +105,11 @@ class Producer(Node):
             depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
             color = np.asarray(PILImage.open(color_path).convert("RGB"))
             
+            stamp = self.get_clock().now().to_msg()
 
             msg = SensorImage()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "camera_link"
+            msg.header.stamp = stamp
+            msg.header.frame_id = "camera_depth_frame"
             msg.height = depth.shape[0]
             msg.width = depth.shape[1]
             msg.encoding = "16UC1"
@@ -118,8 +119,8 @@ class Producer(Node):
             self.__depth_publisher.publish(msg)
 
             msg = SensorImage()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "camera_link"
+            msg.header.stamp = stamp
+            msg.header.frame_id = "camera_depth_frame"
             msg.height = color.shape[0]
             msg.width = color.shape[1]
             msg.encoding = "rgb8"
@@ -129,15 +130,15 @@ class Producer(Node):
             self.__color_publisher.publish(msg)
 
             msg = CameraInfo()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "camera_link"
+            msg.header.stamp = stamp
+            msg.header.frame_id = "camera_depth_frame"
             msg.height = color.shape[0]
             msg.width = color.shape[1]
             msg.k = [500.0, 0.0, 640.0, 0.0, 500.0, 360.0, 0.0, 0.0, 1.0]
             self.__info_publisher.publish(msg)
 
             msg = NavSatFix()
-            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.stamp = stamp
             msg.latitude = 0.0
             msg.longitude = c
             c += 1e-5
@@ -145,6 +146,7 @@ class Producer(Node):
 
             msg = Odometry()
             q = euler_to_quaternion(roll=0,pitch=0,yaw=np.pi/2)
+            msg.header.stamp = stamp
             msg.pose.pose.orientation.x = q[0].item()
             msg.pose.pose.orientation.y = q[1].item()
             msg.pose.pose.orientation.z = q[2].item()
@@ -154,26 +156,28 @@ class Producer(Node):
             msg.pose.pose.position.z = 0.0
             self.__odo_publisher.publish(msg)
 
-            map_to_odom = TransformStamped()
-            map_to_odom.header.stamp = self.get_clock().now().to_msg()
-            map_to_odom.header.frame_id = 'map'
-            map_to_odom.child_frame_id = 'odom'
-            map_to_odom.transform.translation.x = 0.0
-            map_to_odom.transform.translation.y = 0.0
-            map_to_odom.transform.translation.z = 0.0
-            map_to_odom.transform.rotation.w = 1.0
-            self.__broadcaster.sendTransform(map_to_odom)
+            base_to_map = TransformStamped()
+            base_to_map.header.stamp = stamp
+            base_to_map.header.frame_id = 'base_link'
+            base_to_map.child_frame_id = 'map'
+            base_to_map.transform.translation.x = 0.0
+            base_to_map.transform.translation.y = 0.0
+            base_to_map.transform.translation.z = 0.0
+            base_to_map.transform.rotation.w = 1.0
+            self.__broadcaster.sendTransform(base_to_map)
 
-            odom_to_base = TransformStamped()
-            odom_to_base.header.stamp = self.get_clock().now().to_msg()
-            odom_to_base.header.frame_id = 'odom'
-            odom_to_base.child_frame_id = 'base_link'
-            odom_to_base.transform.translation.x = c
-            odom_to_base.transform.translation.y = 0.0
-            odom_to_base.transform.translation.z = 0.0
-            odom_to_base.transform.rotation.w = 1.0
-            self.__broadcaster.sendTransform(odom_to_base)
-            
+            camera_to_base = TransformStamped()
+            camera_to_base.header.stamp = stamp
+            camera_to_base.header.frame_id = "camera_depth_frame"
+            camera_to_base.child_frame_id = "base_link"
+            camera_to_base.transform.translation.x = -0.10
+            camera_to_base.transform.translation.y = 0.0
+            camera_to_base.transform.translation.z = -0.20
+            camera_to_base.transform.rotation.x = 0.0
+            camera_to_base.transform.rotation.y = 0.0
+            camera_to_base.transform.rotation.z = 0.0
+            camera_to_base.transform.rotation.w = 1.0
+            self.__broadcaster.sendTransform(camera_to_base)            
 
 def main():
     try:
