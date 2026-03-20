@@ -17,6 +17,7 @@ import numpy as np
 # import onnxruntime
 import torch
 import torchvision
+import torchvision.transforms as transforms
 from ultralytics import YOLO
 from torch.nn.functional import softmax
 
@@ -33,7 +34,6 @@ POSE_ESTIMATION_THRESHOLD = 0.9
 DEPTH_THRESHOLD = 7000 # in mm
 
 NAV_TOPIC = "/fix"
-ODOM_TOPIC = "/dog_odom"
 DEPTH_TOPIC = "/camera_front/depth"
 RGB_TOPIC = "/camera_front/color"
 CAMERA_INFO = "/camera_front/camera_info"
@@ -85,8 +85,7 @@ class Gesture_Classifier(Node):
             color_topic:str=RGB_TOPIC, 
             depth_topic:str=DEPTH_TOPIC, 
             camera_info:str=CAMERA_INFO, 
-            nav_fix_topic:str=NAV_TOPIC, 
-            odom_topic:str=ODOM_TOPIC, 
+            nav_fix_topic:str=NAV_TOPIC,
             output_topic:str=OUTPUT_TOPIC,
             classification_threshold:float = CLASSIFICATION_THRESHOLD,
             pose_estimation_threshold:float = POSE_ESTIMATION_THRESHOLD,
@@ -98,8 +97,7 @@ class Gesture_Classifier(Node):
                 Subscriber(self, Image, color_topic), 
                 Subscriber(self, Image, depth_topic), 
                 Subscriber(self, CameraInfo, camera_info),
-                Subscriber(self, NavSatFix, nav_fix_topic), 
-                Subscriber(self, Odometry, odom_topic)
+                Subscriber(self, NavSatFix, nav_fix_topic)
             ],
             queue_size=10,
             slop=1e-2
@@ -115,6 +113,9 @@ class Gesture_Classifier(Node):
         self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
         self.__classifier.load_state_dict(torch.load(classifier,map_location=torch.device(self.__device)))
         self.__classifier = self.__classifier.to(self.__device)
+        self.__classifier.eval()
+        self.__to_tensor = transforms.ToTensor()
+        self.__resize = transforms.Resize((224,224))
         self.__classification_threshold = classification_threshold
         self.__pose_estimator = YOLO(pose_estimator)
         self.__pose_estimation_threshold = pose_estimation_threshold
@@ -214,24 +215,26 @@ class Gesture_Classifier(Node):
         return p_3D
 
     def __rel_xyz_to_base_xyz(self, xyz:np.ndarray, stamp) -> tuple[float]:
+        '''xyz in mm'''
         msg = PointStamped()
         msg.header.frame_id = "camera_depth_frame"
         msg.header.stamp = stamp
-        msg.point.x = xyz[0].item()
-        msg.point.y = xyz[1].item()
-        msg.point.z = xyz[2].item()
+        msg.point.x = xyz[0].item() / 1000
+        msg.point.y = xyz[1].item() / 1000
+        msg.point.z = xyz[2].item() / 1000
         transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=0.1))
-        return float(transform.point.x),float(transform.point.y),float(transform.point.z)
+        return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
 
     def __base_xyz_to_abs_xyz(self, xyz:tuple[float], stamp) -> tuple[float]:
+        '''xyz in mm'''
         msg = PointStamped()
         msg.header.frame_id = "base_link"
         msg.header.stamp = stamp
-        msg.point.x = xyz[0]
-        msg.point.y = xyz[1]
-        msg.point.z = xyz[2]
+        msg.point.x = xyz[0] / 1000
+        msg.point.y = xyz[1] / 1000
+        msg.point.z = xyz[2] / 1000
         transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=0.1)) # map or odom
-        return float(transform.point.x),float(transform.point.y),float(transform.point.z)
+        return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
 
     # def __get_GPS(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
     #     '''
@@ -257,8 +260,8 @@ class Gesture_Classifier(Node):
         Parameters:
             x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels (in mm)
         Returns:
-            longitude:  GPS (degrees)
-            latitude:   GPS (degrees)
+            - longitude:  GPS (degrees)
+            - latitude:   GPS (degrees)
         '''
         lat = self.__init_latitude + ((y/1000) / EARTH_RADIUS) * (180.0 / math.pi)
         lon = self.__init_longitude + ((x/1000) / (EARTH_RADIUS * math.cos(math.radians(self.__init_latitude)))) * (180.0 / math.pi)
@@ -282,8 +285,7 @@ class Gesture_Classifier(Node):
 
         
     def __predict_from_image(self, image, classes=CLASSES):
-        # probabilities = self.__recognition_session.run(None, {"input":cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))})[0]
-        probabilities = softmax(self.__classifier(torch.as_tensor(cv2.resize(image, dsize=(640, 480)).reshape((1,3,480,640))).to(self.__device))[0]).detach().cpu().numpy()
+        probabilities = softmax(self.__classifier(self.__resize((self.__to_tensor(image)/255).unsqueeze(dim=0)).to(self.__device))[0]).detach().cpu().numpy()
         argmax = probabilities.argmax()
         pred_class = classes[argmax]
         confidence = probabilities[argmax].item()
@@ -357,7 +359,7 @@ class Gesture_Classifier(Node):
     #         self.__fetch_trigger_client.send_goal_async(goal_msg)
 
 
-    def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix, odometry:Odometry):
+    def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix):
         '''
         Parameters:
             color_image:    8-bit RGB image (H x W x 3)
@@ -369,89 +371,93 @@ class Gesture_Classifier(Node):
             See README
         '''
 
-        if color_image is None or depth_map is None or intrinsics is None or global_position is None or odometry is None or color_image.height != depth_map.height or color_image.width != depth_map.width:
-            self.get_logger().error("Invalid input (e.g. RGBD frames dimensions may mismatch).")
-            return
+        try:
 
-        self.__register_initial_gps(global_position)
-        self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
-        
-        color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
-        depth_map_array = np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32).reshape((depth_map.height, depth_map.width, 1)) # H x W x 1
-        
-        all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
-        self.get_logger().info(f"{len(all_keypoints)} detected humans")
+            # if color_image is None or depth_map is None or intrinsics is None or global_position is None or odometry is None or color_image.height != depth_map.height or color_image.width != depth_map.width:
+            #     self.get_logger().error("Invalid input (e.g. RGBD frames dimensions may mismatch).")
+            #     return
 
-        if len(all_keypoints) == 0:
-            # self.get_logger().info("No detected person")
-            return
-        
-        argmin_u = None
-        argmin_v = None
-        argmin_idx = None
-        min_depth = math.inf
-        for idx, single_person_keypoints in enumerate(all_keypoints):
-            agg = self.__aggregate(single_person_keypoints)
-            if agg is None:
-                continue
-            depth, u, v, c = agg[0], agg[1], agg[2], agg[3]
-            if depth < min_depth:
-                argmin_u = u
-                argmin_v = v
-                min_depth = depth
-                argmin_idx = idx
-        
-        assert argmin_u is not None
-        
-        if min_depth > self.__depth_threshold:
-            self.get_logger().warn(f"Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
-            return
-        
-        
-        rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-        base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
-        abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
-        gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1])
-        
-        prediction = self.__predict_from_image(color_image_array)
-        
-        self.get_logger().info(f"Detection position: {gps} (GPS) [or ({abs_xyz}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
+            self.__register_initial_gps(global_position)
+            self.get_logger().info(f"Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm)")
+            
+            color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
+            depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
+            
+            all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
+            self.get_logger().info(f"{len(all_keypoints)} detected humans")
 
-        if prediction["confidence"] < self.__classification_threshold:
-            self.get_logger().warn("Low confidence.")
-            return
+            if len(all_keypoints) == 0:
+                # self.get_logger().info("No detected person")
+                return
+            
+            argmin_u = None
+            argmin_v = None
+            argmin_idx = None
+            min_depth = math.inf
+            for idx, single_person_keypoints in enumerate(all_keypoints):
+                agg = self.__aggregate(single_person_keypoints)
+                if agg is None:
+                    continue
+                depth, u, v, c = agg[0], agg[1], agg[2], agg[3]
+                if depth < min_depth:
+                    argmin_u = u
+                    argmin_v = v
+                    min_depth = depth
+                    argmin_idx = idx
+            
+            assert argmin_u is not None
+            
+            if min_depth > self.__depth_threshold:
+                self.get_logger().warn(f"Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
+                return
+            
+            
+            rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+            base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
+            abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
+            gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
+            
+            prediction = self.__predict_from_image(color_image_array)
+            
+            self.get_logger().info(f"Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
-        self.get_logger().info("High confidence, actions are triggered.")
-        
-        
-        
-        # self.__action_calls(prediction["class"])
-        
+            if prediction["confidence"] < self.__classification_threshold:
+                self.get_logger().warn("Low confidence.")
+                return
+
+            self.get_logger().info("High confidence, actions are triggered.")
+            
+            
+            
+            # self.__action_calls(prediction["class"])
+            
 
 
 
-        self.__publisher.publish(String(data=json.dumps({
-            "type": "FeatureCollection",
-            "features":[
-                {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": list(gps)
-                    },
-                    "properties": {
-                        "class":prediction["class"],
-                        "confidence":prediction["confidence"],
-                        "depth":min_depth,
-                        "id":self.__counter,
-                        "timestamp":self.get_clock().now().nanoseconds,
-                        "keypoints_and_depths": all_keypoints[argmin_idx]
+            self.__publisher.publish(String(data=json.dumps({
+                "type": "FeatureCollection",
+                "features":[
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": list(gps)
+                        },
+                        "properties": {
+                            "class":prediction["class"],
+                            "confidence":prediction["confidence"],
+                            "depth":min_depth,
+                            "id":self.__counter,
+                            "timestamp":self.get_clock().now().nanoseconds,
+                            "keypoints_and_depths": all_keypoints[argmin_idx]
+                        }
                     }
-                }
-            ]
-        })))
-        self.__counter += 1
-
+                ]
+            })))
+            self.__counter += 1
+        
+        except BaseException as e:
+            self.get_logger().error(f"Error occured: {e}")
 
 def main():
     try:

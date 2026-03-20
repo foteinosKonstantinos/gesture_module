@@ -8,7 +8,9 @@ from PIL import Image as PILImage
 import numpy as np
 from rclpy.executors import ExternalShutdownException
 import time
+import math
 
+EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
 
 def euler_to_quaternion(roll, pitch, yaw):
@@ -17,6 +19,19 @@ def euler_to_quaternion(roll, pitch, yaw):
     qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
     qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
     return [qx, qy, qz, qw]
+
+def abs_xy_to_gps(x, y) -> tuple[float]:
+    '''
+    abs_xy -> GPS
+    Parameters:
+        x,y:        With origin the initial robot position and "orientation" the same with the "flatten" meridians/parallels (in mm)
+    Returns:
+        - longitude:  GPS (degrees)
+        - latitude:   GPS (degrees)
+    '''
+    lat = ((y/1000) / EARTH_RADIUS) * (180.0 / math.pi)
+    lon = ((x/1000) / (EARTH_RADIUS * math.cos(math.radians(0)))) * (180.0 / math.pi)
+    return float(lon), float(lat)
 
 class Producer(Node):
 
@@ -41,11 +56,6 @@ class Producer(Node):
         self.__gps_publisher=self.create_publisher(
             msg_type=NavSatFix,
             topic="/fix",
-            qos_profile = 10
-        )
-        self.__odo_publisher=self.create_publisher(
-            msg_type=Odometry,
-            topic="/dog_odom",
             qos_profile = 10
         )
         self.__broadcaster = TransformBroadcaster(self)
@@ -89,7 +99,7 @@ class Producer(Node):
         total = len(rgb_frames)
         assert len(depth_frames) == total
 
-        c = 0.0
+        x_mm = 0.0
         idx = 0
 
         while True:
@@ -139,45 +149,37 @@ class Producer(Node):
 
             msg = NavSatFix()
             msg.header.stamp = stamp
-            msg.latitude = 0.0
-            msg.longitude = c
-            c += 1e-5
+            (msg.longitude, msg.latitude) = abs_xy_to_gps(x=x_mm,y=0)
             self.__gps_publisher.publish(msg)
 
-            msg = Odometry()
-            q = euler_to_quaternion(roll=0,pitch=0,yaw=np.pi/2)
-            msg.header.stamp = stamp
-            msg.pose.pose.orientation.x = q[0].item()
-            msg.pose.pose.orientation.y = q[1].item()
-            msg.pose.pose.orientation.z = q[2].item()
-            msg.pose.pose.orientation.w = q[3].item()
-            msg.pose.pose.position.x = c
-            msg.pose.pose.position.y = 0.0
-            msg.pose.pose.position.z = 0.0
-            self.__odo_publisher.publish(msg)
-
+            q = euler_to_quaternion(roll=0, pitch=0, yaw=np.pi/2)
             base_to_map = TransformStamped()
             base_to_map.header.stamp = stamp
-            base_to_map.header.frame_id = 'base_link'
-            base_to_map.child_frame_id = 'map'
-            base_to_map.transform.translation.x = 0.0
+            base_to_map.header.frame_id = 'map'
+            base_to_map.child_frame_id = 'base_link'
+            base_to_map.transform.translation.x = float(x_mm / 1000.0)
             base_to_map.transform.translation.y = 0.0
             base_to_map.transform.translation.z = 0.0
-            base_to_map.transform.rotation.w = 1.0
+            base_to_map.transform.rotation.x = float(q[0].item())
+            base_to_map.transform.rotation.y = float(q[1].item())
+            base_to_map.transform.rotation.z = float(q[2].item())
+            base_to_map.transform.rotation.w = float(q[3].item())
             self.__broadcaster.sendTransform(base_to_map)
 
             camera_to_base = TransformStamped()
             camera_to_base.header.stamp = stamp
-            camera_to_base.header.frame_id = "camera_depth_frame"
-            camera_to_base.child_frame_id = "base_link"
-            camera_to_base.transform.translation.x = -0.10
+            camera_to_base.header.frame_id = "base_link"
+            camera_to_base.child_frame_id = "camera_depth_frame"
+            camera_to_base.transform.translation.x = 0.0
             camera_to_base.transform.translation.y = 0.0
-            camera_to_base.transform.translation.z = -0.20
+            camera_to_base.transform.translation.z = 0.0
             camera_to_base.transform.rotation.x = 0.0
             camera_to_base.transform.rotation.y = 0.0
             camera_to_base.transform.rotation.z = 0.0
             camera_to_base.transform.rotation.w = 1.0
-            self.__broadcaster.sendTransform(camera_to_base)            
+            self.__broadcaster.sendTransform(camera_to_base)
+
+            x_mm += 1000
 
 def main():
     try:
