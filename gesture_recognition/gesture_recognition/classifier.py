@@ -7,7 +7,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 import tf2_ros
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PointStamped
+from tf2_geometry_msgs import PointStamped
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from robal_interfaces.action import ApproachPerson, ExploreArea, ExploreAreaGNSS, NavigateTo, NavigateToGNSS, Trigger
 import cv2

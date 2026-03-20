@@ -2,6 +2,8 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image as SensorImage, NavSatFix
 from nav_msgs.msg import Odometry
+from tf2_geometry_msgs import TransformStamped
+from tf2_ros import TransformBroadcaster
 from PIL import Image as PILImage
 import numpy as np
 from rclpy.executors import ExternalShutdownException
@@ -46,6 +48,7 @@ class Producer(Node):
             topic="/dog_odom",
             qos_profile = 10
         )
+        self.__broadcaster = TransformBroadcaster(self)
 
         depth_frames = [
             "frames/high_Come-to-me_2_depth.png",
@@ -104,6 +107,8 @@ class Producer(Node):
             
 
             msg = SensorImage()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera_link"
             msg.height = depth.shape[0]
             msg.width = depth.shape[1]
             msg.encoding = "16UC1"
@@ -113,6 +118,8 @@ class Producer(Node):
             self.__depth_publisher.publish(msg)
 
             msg = SensorImage()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera_link"
             msg.height = color.shape[0]
             msg.width = color.shape[1]
             msg.encoding = "rgb8"
@@ -122,12 +129,17 @@ class Producer(Node):
             self.__color_publisher.publish(msg)
 
             msg = CameraInfo()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera_link"
+            msg.height = color.shape[0]
+            msg.width = color.shape[1]
             msg.k = [500.0, 0.0, 640.0, 0.0, 500.0, 360.0, 0.0, 0.0, 1.0]
             self.__info_publisher.publish(msg)
 
             msg = NavSatFix()
+            msg.header.stamp = self.get_clock().now().to_msg()
             msg.latitude = 0.0
-            msg.longitude = c # degrees
+            msg.longitude = c
             c += 1e-5
             self.__gps_publisher.publish(msg)
 
@@ -137,7 +149,30 @@ class Producer(Node):
             msg.pose.pose.orientation.y = q[1].item()
             msg.pose.pose.orientation.z = q[2].item()
             msg.pose.pose.orientation.w = q[3].item()
+            msg.pose.pose.position.x = c
+            msg.pose.pose.position.y = 0.0
+            msg.pose.pose.position.z = 0.0
             self.__odo_publisher.publish(msg)
+
+            map_to_odom = TransformStamped()
+            map_to_odom.header.stamp = self.get_clock().now().to_msg()
+            map_to_odom.header.frame_id = 'map'
+            map_to_odom.child_frame_id = 'odom'
+            map_to_odom.transform.translation.x = 0.0
+            map_to_odom.transform.translation.y = 0.0
+            map_to_odom.transform.translation.z = 0.0
+            map_to_odom.transform.rotation.w = 1.0
+            self.__broadcaster.sendTransform(map_to_odom)
+
+            odom_to_base = TransformStamped()
+            odom_to_base.header.stamp = self.get_clock().now().to_msg()
+            odom_to_base.header.frame_id = 'odom'
+            odom_to_base.child_frame_id = 'base_link'
+            odom_to_base.transform.translation.x = c
+            odom_to_base.transform.translation.y = 0.0
+            odom_to_base.transform.translation.z = 0.0
+            odom_to_base.transform.rotation.w = 1.0
+            self.__broadcaster.sendTransform(odom_to_base)
             
 
 def main():
