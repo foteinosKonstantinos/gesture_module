@@ -8,8 +8,8 @@ from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 import tf2_ros
 from nav_msgs.msg import Odometry
 from tf2_geometry_msgs import PointStamped, PoseStamped
+from geometry_msgs.msg import Pose, Transform
 from message_filters import Subscriber, ApproximateTimeSynchronizer
-# from robal_interfaces.action import ApproachPerson, ExploreArea, ExploreAreaGNSS, NavigateTo, NavigateToGNSS, Trigger
 import cv2
 import json
 import math
@@ -20,16 +20,28 @@ import torchvision
 import torchvision.transforms as transforms
 from ultralytics import YOLO
 from torch.nn.functional import softmax
+from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, HelpRequest
+
+# Come to me            => NavigateTo           (/b2/local/trigger_navigation)
+# Unfreeze (ok to go)   => Trigger              (/b2/local/trigger_freeze)
+# Move away from here   => Trigger              (/b2/local/trigger_retreat)
+# Operation finished    => Trigger              (/b2/local/trigger_return_to_base)
+# Freeze                => Trigger              (/b2/local/trigger_freeze)
+# Stop                  => Trigger              (/b2/local/trigger_stop)
+# Emergency situation   => Trigger              (/b2/global/trigger_emergency)
+# I need help           => HelpRequest          (/b2/local/trigger_help_request)]           [or NavigateTo (/b2/local/trigger_navigation) ?]
+# Evacuate the area     => ?                                                                [probably return to GS?]
+# I lost connection     => HelpRequest          (/b2/local/trigger_help_request)
+# Fetch a gas mask      => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
+# Featch a shovel       => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
+# Fetch an axe          => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 
 EARTH_RADIUS = 6378137.0 # in meters
 
-# Deployment details
-
-# ONNX_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnet.onnx"
-CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnetb0_color_pretrained.pt"
+CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnetb0_color_pretrained_ext.pt"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 
-CLASSIFICATION_THRESHOLD = 0.99
+CLASSIFICATION_THRESHOLD = 0.9
 POSE_ESTIMATION_THRESHOLD = 0.9
 DEPTH_THRESHOLD = 7000 # in mm
 
@@ -41,18 +53,19 @@ OUTPUT_TOPIC = "/gesture_command"
 
 # Gesture commands. The ordering is crucial.
 CLASSES = [
-    "fetch-a-gas-mask",
-    "come-to-me",
-    "ok-to-go",
-    "move-away-from-here",
-    "operation-finished",
-    "freeze",
-    "emergency-situation",
-    "i-need-help",
-    "evacuate-the-area",
-    "i-lost-connection",
-    "fetch-a-shovel",
-    "fetch-an-axe"
+    "fetch-a-gas-mask", # G0
+    "come-to-me", # G1
+    "unfreeze", # G10 (previously named "ok-to-go")
+    "move-away-from-here", # G11
+    "stop", # G12
+    "operation-finished", # G2
+    "freeze", # G3
+    "emergency-situation", # G4
+    "i-need-help", # G5
+    "evacuate-the-area", # G6
+    "i-lost-connection", # G7
+    "fetch-a-shovel", # G8
+    "fetch-an-axe" # G9
 ]
 
 KEYPOINTS = [
@@ -78,8 +91,7 @@ KEYPOINTS = [
 
 class Gesture_Classifier(Node):
 
-    def __init__(self, 
-            # classifier_onnx:str=ONNX_MODEL, 
+    def __init__(self,
             classifier:str=CLASSIFICATION_MODEL,
             pose_estimator:str=POSE_ESTIMATOR, 
             color_topic:str=RGB_TOPIC, 
@@ -108,7 +120,6 @@ class Gesture_Classifier(Node):
             topic = output_topic,
             qos_profile = 10
         )
-        # self.__recognition_session = onnxruntime.InferenceSession(classifier_onnx)
         self.__device = "cuda" if torch.cuda.is_available() else "cpu"
         self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
         self.__classifier.load_state_dict(torch.load(classifier,map_location=torch.device(self.__device)))
@@ -121,16 +132,20 @@ class Gesture_Classifier(Node):
         self.__pose_estimation_threshold = pose_estimation_threshold
         self.__depth_threshold = depth_threshold
         self.__counter = 0
+        
         self.__init_latitude = None
         self.__init_longitude = None
         self.__tf_buffer = tf2_ros.Buffer()
-        self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)    
+        self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)
 
-
-        # self.__return_trigger_client = ActionClient(self, Trigger, "/local/trigger_return_to_base")
-        # self.__fetch_trigger_client = ActionClient(self, Trigger, "/local/trigger_return_base_fetch")
-        # self.__freeze_trigger_client = ActionClient(self, Trigger, "/local/trigger_freeze")
-        # self.__emergency_trigger_client = ActionClient(self, Trigger, "/global/trigger_emergency")
+        self.__stop = ActionClient(self, Trigger, "/b2/local/trigger_stop")
+        self.__help = ActionClient(self, HelpRequest, "/b2/local/trigger_help_request")
+        self.__fetch = ActionClient(self, ReturnToBaseFetch, "/b2/local/trigger_return_to_base_fetch")
+        self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
+        self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
+        self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
+        self.__return_bos = ActionClient(self, Trigger, "/b2/local/trigger_return_to_base")
+        self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
         
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
 
@@ -169,6 +184,7 @@ class Gesture_Classifier(Node):
         '''
         Parameters:
             keypoints:  Keypoints of a single person in the format of __detect_keypoints output
+            Only the left & right shoulder are considered
         Returns:
             d:      average depth of the keypoints (in the given depth measurement units)
             u:      average u (in pixels)
@@ -199,6 +215,7 @@ class Gesture_Classifier(Node):
             return d, u, v, c
         return None
 
+
     def __uvd_to_rel_xyz(self, u, v, depth, intrinsics) -> np.ndarray:
         '''
         uvd -> rel_xyz (Backprojects a point to 3D space)
@@ -214,6 +231,7 @@ class Gesture_Classifier(Node):
         p_3D = depth * (np.linalg.inv(intrinsics) @ p_2D_h)
         return p_3D
 
+
     def __rel_xyz_to_base_xyz(self, xyz:np.ndarray, stamp) -> tuple[float]:
         '''xyz in mm'''
         msg = PointStamped()
@@ -225,6 +243,7 @@ class Gesture_Classifier(Node):
         transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=0.1))
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
 
+
     def __base_xyz_to_abs_xyz(self, xyz:tuple[float], stamp) -> tuple[float]:
         '''xyz in mm'''
         msg = PointStamped()
@@ -235,24 +254,7 @@ class Gesture_Classifier(Node):
         msg.point.z = xyz[2] / 1000
         transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=0.1)) # map or odom
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
-
-    # def __get_GPS(self, det_distance, cam_lat, cam_lon, orientation_x, orientation_y):
-    #     '''
-    #     Parameters:
-    #         det_distance:   Distance between the detection and the camera (assume that the detection is in the line of the orientation of the camera) (in mm)
-    #         cam_lat:        Current global latitude of the camera/robot
-    #         cam_lon:        Current global longitude of the camera/robot
-    #         orientation_x:  W.r.t. to the xy coordinate system that satisfies xx' // parallels, yy' // meridians (approximately) (*)
-    #         orientation_y:  The same with orientation_x
-    #     Returns:
-    #         longitude:      GPS (degrees)
-    #         latitude:       GPS (degrees)
-    #     '''
-    #     cam_x, cam_y = self.__global_to_xy_position(lat=cam_lat, lon=cam_lon) # in mm
-    #     norm = math.sqrt(orientation_x ** 2 + orientation_y ** 2)
-    #     det_x = cam_x + det_distance * orientation_x / norm
-    #     det_y = cam_y + det_distance * orientation_y / norm
-    #     return self.__xy_to_global_position(x=det_x, y=det_y), det_x, det_y
+    
 
     def __abs_xy_to_gps(self, x, y) -> tuple[float]:
         '''
@@ -293,70 +295,120 @@ class Gesture_Classifier(Node):
             "class": pred_class,
             "confidence": confidence
         }
-    
-
-    def __quaternion_to_rpy(self, qx, qy, qz, qw):
-        # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-        return {
-            "roll": math.atan2(2.0*(qw*qx + qy*qz), 1.0 - 2.0*(qx*qx + qy*qy)),
-            "pitch": math.asin(2.0*(qw*qy - qz*qx)),
-            "yaw": math.atan2(2.0*(qw*qz + qx*qy), 1.0 - 2.0*(qy*qy + qz*qz))
-        }
 
 
-    # def __action_calls(self, command:str, **args):
-    #     # https://docs.ros.org/en/foxy/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html
+    def __action_calls(self, gesture_command:str, **args):
         
+        # https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
         
-    #     # WRONG: https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
+        if gesture_command == "come-to-me":
+            msg = NavigateTo.Goal()
+            msg.goal_pose = Pose() # map frame
+            msg.goal_pose.position.x = args["x"]
+            msg.goal_pose.position.y = args["y"]
+            msg.goal_pose.position.z = args["z"]
+            msg.goal_pose.orientation.x = args["q0"]
+            msg.goal_pose.orientation.y = args["q1"]
+            msg.goal_pose.orientation.z = args["q2"]
+            msg.goal_pose.orientation.w = args["q3"]
+            msg.timeout = -1
+            self.__navigation.wait_for_server()
+            self.__navigation.send_goal(msg)
         
-    #     if command == "come-to-me":
-    #         pass
+        elif gesture_command == "unfreeze": # Previously named "ok-to-go"
+            msg = Trigger.Goal()
+            msg.activate = False
+            self.__freeze.wait_for_server()
+            self.__freeze.send_goal(msg)
         
-    #     elif command == "ok-to-go":
-    #         goal_msg = Trigger.Goal()
-    #         goal_msg.activate = False
-    #         self.__freeze_trigger_client.wait_for_server(goal_msg)
-    #         self.__freeze_trigger_client.send_goal_async(goal_msg)
+        elif gesture_command == "move-away-from-here":
+            msg = Trigger.Goal()
+            msg.activate = True
+            msg.timeout = -1
+            self.__retreat.wait_for_server()
+            self.__retreat.send_goal(msg)
         
+        elif gesture_command == "operation-finished":
+            msg = Trigger.Goal()
+            msg.activate = True
+            msg.timeout = -1
+            self.__return_bos.wait_for_server()
+            self.__return_bos.send_goal(msg)
+        
+        elif gesture_command == "freeze":
+            msg = Trigger.Goal()
+            msg.activate = True
+            self.__freeze.wait_for_server()
+            self.__freeze.send_goal(msg)
+        
+        elif gesture_command == "stop":
+            msg = Trigger.Goal()
+            msg.activate = True
+            self.__stop.wait_for_server()
+            self.__stop.send_goal(msg)
 
-    #     elif command == "move-away-from-here":
-    #         pass
-        
-        
-    #     elif command == "operation-finished":
-    #         goal_msg = Trigger.Goal()
-    #         goal_msg.activate = True
-    #         self.__return_trigger_client.wait_for_server(goal_msg)
-    #         self.__return_trigger_client.send_goal_async(goal_msg)
-        
+        elif gesture_command == "emergency-situation":
+            msg = Trigger.Goal()
+            msg.activate = True
+            self.__emergency.wait_for_server()
+            self.__emergency.send_goal(msg)
 
-    #     elif command == "freeze":
-    #         goal_msg = Trigger.Goal()
-    #         goal_msg.activate = True
-    #         self.__freeze_trigger_client.wait_for_server(goal_msg)
-    #         self.__freeze_trigger_client.send_goal_async(goal_msg)
+        elif gesture_command == "i-need-help":
+            msg = HelpRequest.Goal()
+            msg.target_transform = Transform()
+            msg.target_transform.translation.x = args["x"]
+            msg.target_transform.translation.y = args["y"]
+            msg.target_transform.translation.z = args["z"]
+            msg.target_transform.rotation.x = args["q0"]
+            msg.target_transform.rotation.y = args["q1"]
+            msg.target_transform.rotation.z = args["q2"]
+            msg.target_transform.rotation.w = args["q3"]
+            msg.help_type = "aids"
+            msg.timeout = -1
+            self.__help.wait_for_server()
+            self.__help.send_goal(msg)
         
+        elif gesture_command == "evacuate-the-area": # TODO: map this command to an action
+            pass
         
-    #     elif command == "emergency-situation":
-    #         goal_msg = Trigger.Goal()
-    #         goal_msg.activate = True
-    #         self.__emergency_trigger_client.wait_for_server(goal_msg)
-    #         self.__emergency_trigger_client.send_goal_async(goal_msg)
-
+        elif gesture_command == "i-lost-connection":
+            msg = HelpRequest.Goal()
+            msg.target_transform = Transform()
+            msg.target_transform.translation.x = args["x"]
+            msg.target_transform.translation.y = args["y"]
+            msg.target_transform.translation.z = args["z"]
+            msg.target_transform.rotation.x = args["q0"]
+            msg.target_transform.rotation.y = args["q1"]
+            msg.target_transform.rotation.z = args["q2"]
+            msg.target_transform.rotation.w = args["q3"]
+            msg.help_type = "technical"
+            msg.timeout = -1
+            self.__help.wait_for_server()
+            self.__help.send_goal(msg)
         
-    #     elif command == "i-need-help":
-    #         pass
-    #     elif command == "evacuate-the-area":
-    #         pass
-    #     elif command == "i-lost-connection":
-    #         pass
-
-    #     elif command == "fetch-a-gas-mask" or command == "fetch-a-shovel" or command == "fetch-an-axe":
-    #         goal_msg = Trigger.Goal()
-    #         goal_msg.activate = True
-    #         self.__fetch_trigger_client.wait_for_server(goal_msg)
-    #         self.__fetch_trigger_client.send_goal_async(goal_msg)
+        elif gesture_command == "fetch-a-gas-mask":
+            msg = ReturnToBaseFetch.Goal()
+            msg.activate = True
+            msg.object = "gas_mask"
+            msg.timeout = -1
+            self.__fetch.wait_for_server()
+            self.__fetch.send_goal(msg)
+        
+        elif gesture_command == "fetch-a-shovel":
+            msg = ReturnToBaseFetch.Goal()
+            msg.activate = True
+            msg.object = "shovel"
+            msg.timeout = -1
+            self.__fetch.wait_for_server()
+            self.__fetch.send_goal(msg)
+        
+        elif gesture_command == "fetch-an-axe":
+            msg = ReturnToBaseFetch.Goal()
+            msg.activate = True
+            msg.object = "axe"
+            msg.timeout = -1
+            self.__fetch.wait_for_server()
+            self.__fetch.send_goal(msg)
 
 
     def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix):
@@ -411,7 +463,6 @@ class Gesture_Classifier(Node):
                 self.get_logger().warn(f"Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
                 return
             
-            
             rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
             base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
             abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
@@ -427,12 +478,7 @@ class Gesture_Classifier(Node):
 
             self.get_logger().info("High confidence, actions are triggered.")
             
-            
-            
-            # self.__action_calls(prediction["class"])
-            
-
-
+            self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
 
             self.__publisher.publish(String(data=json.dumps({
                 "type": "FeatureCollection",
