@@ -1,7 +1,6 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image as SensorImage, NavSatFix
-from nav_msgs.msg import Odometry
 from tf2_geometry_msgs import TransformStamped
 from tf2_ros import TransformBroadcaster
 from PIL import Image as PILImage

@@ -6,7 +6,7 @@
 
 ### General information
 
-This module takes as input aligned RGBD frames and the (global) pose of the camera (i.e. orientation and 2D position) at that timestamp (approximately) and performs gesture classication and pose estimation simultaneously; if a gesture is detected with high confidence and sufficiently close to the camera, it publishes, for a particular human considered to be the signer (e.g. the closest one), the pixel coordinates (uv) of her/his keypoints (e.g. ankles, shoulders), their depth and estimation confidence. Further, it estimates the uv position and depth of his/her by getting the average of the per-keypoint uv and depth. This information is utilized to predict the (global) longitude and latitude coordinates. Robot actions are triggered.
+This module takes as input aligned RGBD frames and the (global) pose of the camera (i.e. orientation and 2D position) at that timestamp (approximately) and performs gesture classication and pose estimation simultaneously; if a gesture is detected with high confidence and sufficiently close to the camera, it publishes, for a particular human considered to be the signer (e.g. the closest one), the pixel coordinates (uv) of her/his keypoints (e.g. ankles, shoulders), their depth and estimation confidence. Further, it estimates the uv position and depth of his/her by getting the average of the uv and depth correspond to the two shoulders. This information is utilized to predict the (global) longitude and latitude coordinates. Robot actions are triggered.
 
 Transitions between coordinate systems:
 - uvd: uv (image plane) & depth
@@ -27,7 +27,7 @@ Transitions between coordinate systems:
 | /camera_front/depth | Image | Input | 16UC1 in mm (H x W x 2) aligned to the RGB |
 | /camera_front/camera_info | CameraInfo | Input | - |
 | /fix | NavSatFix | Input | - |
-| /dog_odom | Odometry | Input | Orientation should be expresses wr.t. to a global coordinate system (the "standard" xy plane aligned to parallels and meridians) |
+<!-- | /dog_odom | Odometry | Input | Orientation should be expresses wr.t. to a global coordinate system (the "standard" xy plane aligned to parallels and meridians) | -->
 | /gesture_command | String | Output | Stringified GeoJSON, see below |
 
 
@@ -221,37 +221,37 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 To build the image:
 ```bash
-sudo docker build -t gesture_container .
+docker build -t gesture_container .
 ```
 
 > To view the existing images:
 > ```bash
-> sudo docker images -a
+> docker images -a
 > ```
 >
 > To remove an image:
 > ```bash
-> sudo docker rmi gesture_container
+> docker rmi gesture_container
 > ```
 
 To create & enter the container (the `--net host` is mandatory to enable access to outside topics and `--gpus all` for accessing the available GPUs):
 ```bash
-sudo docker run --net host --gpus all -it gesture_container /bin/bash
+docker run --net host --gpus all -it gesture_container /bin/bash
 ```
 
 To view the running containers:
 ```bash
-sudo docker container ps -a
+docker container ps -a
 ```
 
 > To remove all containers:
 > ```bash
-> sudo docker container prune
+> docker container prune
 > ```
 
 To enter the container:
 ```bash
-sudo docker exec -it <container ID> bash
+docker exec -it <container ID> bash
 ```
 
 <!-- ### Instructions for playing the ROS2 bag:
@@ -271,7 +271,9 @@ Activate ROS (Humble) (zsh, bash, ... according to your terminal):
 source /opt/ros/humble/setup.bash
 ```
 
-Clone and build the UPC interface: https://gitlab.com/asantamarianavarro/code/projects/triffid/robal_interfaces.
+Clone, build and install the UPC interface: https://gitlab.com/asantamarianavarro/code/projects/triffid/robal_interfaces.
+
+> Use `docker cp` to copy the folder within the container
 
 Build the package:
 ```bash
