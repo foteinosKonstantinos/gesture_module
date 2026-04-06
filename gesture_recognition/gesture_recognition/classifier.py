@@ -6,15 +6,13 @@ from rclpy.action import ActionClient
 from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo, NavSatFix
 import tf2_ros
-from nav_msgs.msg import Odometry
-from tf2_geometry_msgs import PointStamped, PoseStamped
+from tf2_geometry_msgs import PointStamped
 from geometry_msgs.msg import Pose, Transform
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 import cv2
 import json
 import math
 import numpy as np
-# import onnxruntime
 import torch
 import torchvision
 import torchvision.transforms as transforms

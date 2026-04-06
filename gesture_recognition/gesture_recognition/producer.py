@@ -74,8 +74,10 @@ class Producer(Node):
             "frames/high_Freeze_184_depth.png",
             "frames/high_Ok-to-go_203_depth.png",
             "frames/high_Ok-to-go_263_depth.png",
-            "frames/high_Ok-to-go_263_depth.png", # dummy
-            "frames/high_Ok-to-go_263_depth.png"  # dummy
+            "frames/high_Ok-to-go_263_depth.png",   # dummy
+            "frames/high_Ok-to-go_263_depth.png",   # dummy
+            "frames/STOP_high_16_depth.png",
+            "frames/STOP_high_90_depth.png"
         ]
 
         rgb_frames = [
@@ -93,7 +95,9 @@ class Producer(Node):
             "frames/high_Ok-to-go_203_color.png",
             "frames/high_Ok-to-go_263_color.png",
             "frames/multi_person.png",
-            "frames/no_person.png"
+            "frames/no_person.png",
+            "frames/STOP_high_16_color.png",
+            "frames/STOP_high_90_color.png"   
         ]
 
         total = len(rgb_frames)
