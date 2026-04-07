@@ -28,7 +28,7 @@ from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, Help
 # Stop                  => Trigger              (/b2/local/trigger_stop)
 # Emergency situation   => Trigger              (/b2/global/trigger_emergency)
 # I need help           => HelpRequest          (/b2/local/trigger_help_request)]           [or NavigateTo (/b2/local/trigger_navigation) ?]
-# Evacuate the area     => ?                                                                [probably return to GS?]
+# Evacuate the area     => Trigger              (/b2/local/trigger_return_to_base)          [TODO]
 # I lost connection     => HelpRequest          (/b2/local/trigger_help_request)
 # Fetch a gas mask      => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 # Featch a shovel       => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
@@ -367,7 +367,11 @@ class Gesture_Classifier(Node):
             self.__help.send_goal_async(msg)
         
         elif gesture_command == "evacuate-the-area": # TODO: map this command to an action
-            pass
+            msg = Trigger.Goal()
+            msg.activate = True
+            msg.timeout = -1.0
+            self.__return_bos.wait_for_server()
+            self.__return_bos.send_goal_async(msg)
         
         elif gesture_command == "i-lost-connection":
             msg = HelpRequest.Goal()
