@@ -238,7 +238,7 @@ class Gesture_Classifier(Node):
         msg.point.x = xyz[0].item() / 1000
         msg.point.y = xyz[1].item() / 1000
         msg.point.z = xyz[2].item() / 1000
-        transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=0.5))
+        transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=1.0))
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
 
 
@@ -250,7 +250,7 @@ class Gesture_Classifier(Node):
         msg.point.x = xyz[0] / 1000
         msg.point.y = xyz[1] / 1000
         msg.point.z = xyz[2] / 1000
-        transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=0.5)) # map or odom
+        transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=1.0)) # map or odom
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
     
 

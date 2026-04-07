@@ -239,6 +239,8 @@ To create & enter the container (the `--net host` is mandatory to enable access 
 docker run --net host --gpus all -it gesture_container /bin/bash
 ```
 
+> Use `--runtime=nvidia` instead of `--gpus all` in the Jetson
+
 To view the running containers:
 ```bash
 docker container ps -a
@@ -262,7 +264,17 @@ ros2 bag play <db3 file>
 ```
 -->
 
-### Instructions for setup (ROS)
+### Instructions for setup (using the scripts)
+
+```bash
+chmod +x run_classifier.sh
+chmod +x run_producer.sh
+./run_classifier.sh
+```
+
+Only for the simulated data: open a second terminal, enter the container and type `./run_producer.sh`.
+
+### Instructions for setup (using ROS directly)
 
 After entering the container:
 
