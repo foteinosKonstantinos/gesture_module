@@ -6,11 +6,11 @@ from tf2_ros import TransformBroadcaster
 from PIL import Image as PILImage
 import numpy as np
 from rclpy.executors import ExternalShutdownException
-import time
 import math
 
 EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
+FPS = 10
 
 def euler_to_quaternion(roll, pitch, yaw):
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
@@ -34,7 +34,7 @@ def abs_xy_to_gps(x, y) -> tuple[float]:
 
 class Producer(Node):
 
-    def __init__(self,path=PATH):
+    def __init__(self):
         super().__init__("producer_node")
         
         self.__color_publisher=self.create_publisher(
@@ -59,7 +59,7 @@ class Producer(Node):
         )
         self.__broadcaster = TransformBroadcaster(self)
 
-        depth_frames = [
+        self.__depth_frames = [
             "frames/high_Come-to-me_2_depth.png",
             "frames/high_Come-to-me_98_depth.png",
             "frames/high_Come-to-me_1214_depth.png",
@@ -79,7 +79,7 @@ class Producer(Node):
             "frames/high_Ok-to-go_263_depth.png",   # dummy
         ]
 
-        rgb_frames = [
+        self.__rgb_frames = [
             "frames/high_Come-to-me_2_color.png",
             "frames/high_Come-to-me_98_color.png",
             "frames/high_Come-to-me_1214_color.png",
@@ -99,91 +99,91 @@ class Producer(Node):
             "frames/no_person.png",
         ]
 
-        total = len(rgb_frames)
-        assert len(depth_frames) == total
+        self.__total = len(self.__rgb_frames)
+        assert len(self.__depth_frames) == self.__total
 
-        x_mm = 0.0
-        idx = 0
+        self.__x_mm = 0.0
+        self.__idx = 0
 
-        while True:
-
-            time.sleep(1)
-
+        self.__timer = self.create_timer(1/FPS, self.publish)
             
-            depth_path = f"{path}/{depth_frames[idx]}"
-            color_path = f"{path}/{rgb_frames[idx]}"
-            self.get_logger().info(f"Publishing {color_path} and {depth_path}...")
-            idx = (idx + 1) % total
 
-            depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
-            color = np.asarray(PILImage.open(color_path).convert("RGB"))
-            
-            stamp = self.get_clock().now().to_msg()
+    def publish(self, path=PATH):
+        depth_path = f"{path}/{self.__depth_frames[self.__idx]}"
+        color_path = f"{path}/{self.__rgb_frames[self.__idx]}"
+        self.get_logger().info(f"Publishing {color_path} and {depth_path}...")
+        self.__idx = (self.__idx + 1) % self.__total
 
-            msg = SensorImage()
-            msg.header.stamp = stamp
-            msg.header.frame_id = "camera_depth_frame"
-            msg.height = depth.shape[0]
-            msg.width = depth.shape[1]
-            msg.encoding = "16UC1"
-            msg.is_bigendian = False
-            msg.step = 2 * depth.shape[1]
-            msg.data = depth.tobytes()
-            self.__depth_publisher.publish(msg)
+        depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
+        color = np.asarray(PILImage.open(color_path).convert("RGB"))
+        
+        stamp = self.get_clock().now().to_msg()
 
-            msg = SensorImage()
-            msg.header.stamp = stamp
-            msg.header.frame_id = "camera_depth_frame"
-            msg.height = color.shape[0]
-            msg.width = color.shape[1]
-            msg.encoding = "rgb8"
-            msg.is_bigendian = False
-            msg.step = 3 * color.shape[1]
-            msg.data = color.tobytes()
-            self.__color_publisher.publish(msg)
+        q = euler_to_quaternion(roll=0, pitch=0, yaw=np.pi/2)
+        base_to_map = TransformStamped()
+        base_to_map.header.stamp = stamp
+        base_to_map.header.frame_id = 'map'
+        base_to_map.child_frame_id = 'base_link'
+        base_to_map.transform.translation.x = float(self.__x_mm / 1000.0)
+        base_to_map.transform.translation.y = 0.0
+        base_to_map.transform.translation.z = 0.0
+        base_to_map.transform.rotation.x = float(q[0].item())
+        base_to_map.transform.rotation.y = float(q[1].item())
+        base_to_map.transform.rotation.z = float(q[2].item())
+        base_to_map.transform.rotation.w = float(q[3].item())
+        self.__broadcaster.sendTransform(base_to_map)
 
-            msg = CameraInfo()
-            msg.header.stamp = stamp
-            msg.header.frame_id = "camera_depth_frame"
-            msg.height = color.shape[0]
-            msg.width = color.shape[1]
-            msg.k = [500.0, 0.0, 640.0, 0.0, 500.0, 360.0, 0.0, 0.0, 1.0]
-            self.__info_publisher.publish(msg)
+        camera_to_base = TransformStamped()
+        camera_to_base.header.stamp = stamp
+        camera_to_base.header.frame_id = "base_link"
+        camera_to_base.child_frame_id = "camera_depth_frame"
+        camera_to_base.transform.translation.x = 0.0
+        camera_to_base.transform.translation.y = 0.0
+        camera_to_base.transform.translation.z = 0.0
+        q_camera = euler_to_quaternion(roll=0, pitch=np.pi/2, yaw=0)
+        camera_to_base.transform.rotation.x = float(q_camera[0].item())
+        camera_to_base.transform.rotation.y = float(q_camera[1].item())
+        camera_to_base.transform.rotation.z = float(q_camera[2].item())
+        camera_to_base.transform.rotation.w = float(q_camera[3].item())
+        self.__broadcaster.sendTransform(camera_to_base)
 
-            msg = NavSatFix()
-            msg.header.stamp = stamp
-            (msg.longitude, msg.latitude) = abs_xy_to_gps(x=x_mm,y=0)
-            self.__gps_publisher.publish(msg)
+        msg = SensorImage()
+        msg.header.stamp = stamp
+        msg.header.frame_id = "camera_depth_frame"
+        msg.height = depth.shape[0]
+        msg.width = depth.shape[1]
+        msg.encoding = "16UC1"
+        msg.is_bigendian = False
+        msg.step = 2 * depth.shape[1]
+        msg.data = depth.tobytes()
+        self.__depth_publisher.publish(msg)
 
-            q = euler_to_quaternion(roll=0, pitch=0, yaw=np.pi/2)
-            base_to_map = TransformStamped()
-            base_to_map.header.stamp = stamp
-            base_to_map.header.frame_id = 'map'
-            base_to_map.child_frame_id = 'base_link'
-            base_to_map.transform.translation.x = float(x_mm / 1000.0)
-            base_to_map.transform.translation.y = 0.0
-            base_to_map.transform.translation.z = 0.0
-            base_to_map.transform.rotation.x = float(q[0].item())
-            base_to_map.transform.rotation.y = float(q[1].item())
-            base_to_map.transform.rotation.z = float(q[2].item())
-            base_to_map.transform.rotation.w = float(q[3].item())
-            self.__broadcaster.sendTransform(base_to_map)
+        msg = SensorImage()
+        msg.header.stamp = stamp
+        msg.header.frame_id = "camera_depth_frame"
+        msg.height = color.shape[0]
+        msg.width = color.shape[1]
+        msg.encoding = "rgb8"
+        msg.is_bigendian = False
+        msg.step = 3 * color.shape[1]
+        msg.data = color.tobytes()
+        self.__color_publisher.publish(msg)
 
-            camera_to_base = TransformStamped()
-            camera_to_base.header.stamp = stamp
-            camera_to_base.header.frame_id = "base_link"
-            camera_to_base.child_frame_id = "camera_depth_frame"
-            camera_to_base.transform.translation.x = 0.0
-            camera_to_base.transform.translation.y = 0.0
-            camera_to_base.transform.translation.z = 0.0
-            q_camera = euler_to_quaternion(roll=0, pitch=np.pi/2, yaw=0)
-            camera_to_base.transform.rotation.x = float(q_camera[0].item())
-            camera_to_base.transform.rotation.y = float(q_camera[1].item())
-            camera_to_base.transform.rotation.z = float(q_camera[2].item())
-            camera_to_base.transform.rotation.w = float(q_camera[3].item())
-            self.__broadcaster.sendTransform(camera_to_base)
+        msg = CameraInfo()
+        msg.header.stamp = stamp
+        msg.header.frame_id = "camera_depth_frame"
+        msg.height = color.shape[0]
+        msg.width = color.shape[1]
+        msg.k = [500.0, 0.0, 640.0, 0.0, 500.0, 360.0, 0.0, 0.0, 1.0]
+        self.__info_publisher.publish(msg)
 
-            x_mm += 1000
+        msg = NavSatFix()
+        msg.header.stamp = stamp
+        (msg.longitude, msg.latitude) = abs_xy_to_gps(x=self.__x_mm,y=0)
+        self.__gps_publisher.publish(msg)
+
+        self.__x_mm += 1000
+
 
 def main():
     try:

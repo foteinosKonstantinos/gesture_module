@@ -17,6 +17,8 @@ Transitions between coordinate systems:
 
 > ***TODO: Integrate with UPC***
 
+> Use the `JETSON-Dockerfile` for deployment on Jetson
+
 <!-- `docker exec -it <container ID> bash -c "source /opt/ros/humble/setup.bash;source ./install/local_setup.bash;ros2 run gesture_recognition producer"` -->
 
 ### Provided interface
@@ -68,7 +70,11 @@ The exact message format has as follows:
                   "Left Ankle":     [<u (pixels)>, <v (pixels)>, <confidence (0-1)>, <depth (mm)>],
                   "Right Ankle":    [<u (pixels)>, <v (pixels)>, <confidence (0-1)>, <depth (mm)>]
                },
-               "relative_position": <relative position (mm)>
+               "camera_frame_position": {
+                  "rel_x": <relative x in camera frame (mm)>,
+                  "rel_y": <relative y in camera frame (mm)>,
+                  "rel_z": <relative z in camera frame (mm)>
+                }
             }
         }
     ]
@@ -81,135 +87,135 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 ```json
 {
-   "features" : [
-      {
-         "geometry" : {
-            "coordinates" : [
-               0.018801084661978,
-               0
-            ],
-            "type" : "Point"
-         },
-         "properties" : {
-            "class" : "emergency-situation",
-            "confidence" : 0.816117346286774,
-            "depth" : 1882.53333333333,
-            "id" : 3,
-            "keypoints_and_depths" : {
-               "Left Ankle" : [
-                  340,
-                  480,
-                  0.00234119477681816,
-                  0
-               ],
-               "Left Ear" : [
-                  303,
-                  167,
-                  0.855729699134827,
-                  2044
-               ],
-               "Left Elbow" : [
-                  358,
-                  152,
-                  0.996827900409698,
-                  1910
-               ],
-               "Left Eye" : [
-                  289,
-                  156,
-                  0.991767883300781,
-                  1949
-               ],
-               "Left Hip" : [
-                  316,
-                  372,
-                  0.991478025913239,
-                  1727
-               ],
-               "Left Knee" : [
-                  333,
-                  479,
-                  0.241897374391556,
-                  1727
-               ],
-               "Left Shoulder" : [
-                  321,
-                  214,
-                  0.996646463871002,
-                  1960
-               ],
-               "Left Wrist" : [
-                  311,
-                  90,
-                  0.991696298122406,
-                  1886
-               ],
-               "Nose" : [
-                  280,
-                  164,
-                  0.991436660289764,
-                  1935
-               ],
-               "Right Ankle" : [
-                  234,
-                  480,
-                  0.00165498582646251,
-                  0
-               ],
-               "Right Ear" : [
-                  260,
-                  166,
-                  0.861356258392334,
-                  1975
-               ],
-               "Right Elbow" : [
-                  208,
-                  154,
-                  0.98670756816864,
-                  1903
-               ],
-               "Right Eye" : [
-                  272,
-                  156,
-                  0.994033992290497,
-                  1953
-               ],
-               "Right Hip" : [
-                  257,
-                  369,
-                  0.992672383785248,
-                  1659
-               ],
-               "Right Knee" : [
-                  249,
-                  473,
-                  0.301383495330811,
-                  1736
-               ],
-               "Right Shoulder" : [
-                  242,
-                  209,
-                  0.996383309364319,
-                  1971
-               ],
-               "Right Wrist" : [
-                  242,
-                  104,
-                  0.979750037193298,
-                  1903
-               ]
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    0.004612564554876909,
+                    2.3243907976592615e-05
+                ]
             },
-            "relative_position" : [
-               -1344.41828444444,
-               -495.470444444444,
-               1881.53333333333
-            ],
-            "timestamp" : 1773571893108678133
-         },
-         "type" : "Feature"
-      }
-   ],
-   "type" : "FeatureCollection"
+            "properties": {
+                "class": "emergency-situation",
+                "confidence": 0.9997270703315735,
+                "depth": 2587.5,
+                "id": 45,
+                "timestamp": 1775664019911363811,
+                "keypoints_and_depths": {
+                    "Nose": [
+                        356,
+                        236,
+                        0.9185348749160767,
+                        24401.0
+                    ],
+                    "Left Eye": [
+                        362,
+                        230,
+                        0.8884150981903076,
+                        0.0
+                    ],
+                    "Right Eye": [
+                        351,
+                        230,
+                        0.9121984839439392,
+                        0.0
+                    ],
+                    "Left Ear": [
+                        371,
+                        230,
+                        0.6128950119018555,
+                        0.0
+                    ],
+                    "Right Ear": [
+                        341,
+                        231,
+                        0.6550174355506897,
+                        0.0
+                    ],
+                    "Left Shoulder": [
+                        384,
+                        269,
+                        0.9954492449760437,
+                        2591.0
+                    ],
+                    "Right Shoulder": [
+                        329,
+                        270,
+                        0.9929210543632507,
+                        2584.0
+                    ],
+                    "Left Elbow": [
+                        396,
+                        277,
+                        0.9914302229881287,
+                        2528.0
+                    ],
+                    "Right Elbow": [
+                        313,
+                        282,
+                        0.9697051644325256,
+                        2572.0
+                    ],
+                    "Left Wrist": [
+                        350,
+                        231,
+                        0.9784712195396423,
+                        0.0
+                    ],
+                    "Right Wrist": [
+                        337,
+                        247,
+                        0.9641135334968567,
+                        38861.0
+                    ],
+                    "Left Hip": [
+                        374,
+                        394,
+                        0.9941009879112244,
+                        2650.0
+                    ],
+                    "Right Hip": [
+                        334,
+                        392,
+                        0.992789089679718,
+                        2636.0
+                    ],
+                    "Left Knee": [
+                        375,
+                        478,
+                        0.33960723876953125,
+                        0.0
+                    ],
+                    "Right Knee": [
+                        329,
+                        468,
+                        0.2510174810886383,
+                        2765.0
+                    ],
+                    "Left Ankle": [
+                        375,
+                        477,
+                        0.007985803298652172,
+                        0.0
+                    ],
+                    "Right Ankle": [
+                        328,
+                        473,
+                        0.0036594585981220007,
+                        0.0
+                    ]
+                },
+                "camera_frame_position": {
+                    "rel_x": -1467.1125000000002,
+                    "rel_y": -468.33749999999986,
+                    "rel_z": 2587.5
+                }
+            }
+        }
+    ]
 }
 
 ```

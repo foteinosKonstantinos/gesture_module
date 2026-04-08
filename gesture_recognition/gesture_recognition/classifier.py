@@ -19,6 +19,7 @@ import torchvision.transforms as transforms
 from ultralytics import YOLO
 from torch.nn.functional import softmax
 from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, HelpRequest
+import time
 
 # Come to me            => NavigateTo           (/b2/local/trigger_navigation)
 # Unfreeze (ok to go)   => Trigger              (/b2/local/trigger_freeze)
@@ -42,6 +43,9 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 CLASSIFICATION_THRESHOLD = 0.95
 POSE_ESTIMATION_THRESHOLD = 0.95
 DEPTH_THRESHOLD = 7000 # in mm
+MAX_FPS = 1.0 # sec
+TARGET_TIMEOUT_SECONDS = 1e-1
+SLOP = 1e-1
 
 NAV_TOPIC = "/fix"
 DEPTH_TOPIC = "/camera_front/depth"
@@ -110,7 +114,7 @@ class Gesture_Classifier(Node):
                 Subscriber(self, NavSatFix, nav_fix_topic)
             ],
             queue_size=10,
-            slop=1e-2
+            slop=SLOP
         )
         self.__time_synchronizer.registerCallback(self.__main_callback)
         self.__publisher=self.create_publisher(
@@ -146,7 +150,8 @@ class Gesture_Classifier(Node):
         self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
         
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
-        self.log_counter = 0
+        self.__log_counter = 0
+        self.__last = None
 
     def __detect_keypoints(self, image, depth_map, names = KEYPOINTS) -> list[dict]:
         '''
@@ -238,7 +243,7 @@ class Gesture_Classifier(Node):
         msg.point.x = xyz[0].item() / 1000
         msg.point.y = xyz[1].item() / 1000
         msg.point.z = xyz[2].item() / 1000
-        transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=1.0))
+        transform = self.__tf_buffer.transform(msg,"base_link",timeout=rclpy.duration.Duration(seconds=TARGET_TIMEOUT_SECONDS))
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
 
 
@@ -250,7 +255,7 @@ class Gesture_Classifier(Node):
         msg.point.x = xyz[0] / 1000
         msg.point.y = xyz[1] / 1000
         msg.point.z = xyz[2] / 1000
-        transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=1.0)) # map or odom
+        transform = self.__tf_buffer.transform(msg,"map",timeout=rclpy.duration.Duration(seconds=TARGET_TIMEOUT_SECONDS)) # map or odom
         return float(transform.point.x) * 1000,float(transform.point.y) * 1000,float(transform.point.z) * 1000
     
 
@@ -425,7 +430,19 @@ class Gesture_Classifier(Node):
             See README
         '''
 
-        self.log_counter += 1
+
+        if self.__last is None: # first frame
+            self.__last = time.time()
+        else:
+            current = time.time()
+            approx_fps = 1 / (current - self.__last) # 1/sec
+            if approx_fps > MAX_FPS:
+                self.get_logger().info(f"Omit: {approx_fps:.2f} > {MAX_FPS:.2f} FPS")
+                return
+            self.__last = current
+            self.get_logger().info(f"[{self.__log_counter}] Current approximated FPS: {approx_fps:.2f}")
+
+        self.__log_counter += 1
 
         try:
 
@@ -434,13 +451,13 @@ class Gesture_Classifier(Node):
             #     return
 
             self.__register_initial_gps(global_position)
-            self.get_logger().info(f"[{self.log_counter}] Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm) ((0,0) is the initial)")
+            self.get_logger().info(f"[{self.__log_counter}] Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm) ((0,0) is the initial)")
             
             color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
             depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
             
             all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
-            self.get_logger().info(f"[{self.log_counter}] {len(all_keypoints)} detected humans")
+            self.get_logger().info(f"[{self.__log_counter}] {len(all_keypoints)} detected humans")
 
             if len(all_keypoints) == 0:
                 # self.get_logger().info("No detected person")
@@ -464,7 +481,7 @@ class Gesture_Classifier(Node):
             assert argmin_u is not None
             
             if min_depth > self.__depth_threshold:
-                self.get_logger().warn(f"[{self.log_counter}] Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
+                self.get_logger().warn(f"[{self.__log_counter}] Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
                 return
             
             rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
@@ -474,13 +491,13 @@ class Gesture_Classifier(Node):
             
             prediction = self.__predict_from_image(color_image_array)
             
-            self.get_logger().info(f"[{self.log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
+            self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
             if prediction["confidence"] < self.__classification_threshold:
-                self.get_logger().warn(f"[{self.log_counter}] Low confidence.")
+                self.get_logger().warn(f"[{self.__log_counter}] Low confidence.")
                 return
 
-            self.get_logger().info(f"[{self.log_counter}] High confidence, actions are triggered.")
+            self.get_logger().info(f"[{self.__log_counter}] High confidence, actions are triggered.")
             
             self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
 
@@ -499,7 +516,12 @@ class Gesture_Classifier(Node):
                             "depth":min_depth,
                             "id":self.__counter,
                             "timestamp":self.get_clock().now().nanoseconds,
-                            "keypoints_and_depths": all_keypoints[argmin_idx]
+                            "keypoints_and_depths": all_keypoints[argmin_idx],
+                            "camera_frame_position": {
+                                "rel_x":rel_xyz[0],
+                                "rel_y":rel_xyz[1],
+                                "rel_z":rel_xyz[2]
+                            }
                         }
                     }
                 ]
@@ -507,7 +529,7 @@ class Gesture_Classifier(Node):
             self.__counter += 1
         
         except BaseException as e:
-            self.get_logger().error(f"[{self.log_counter}] Error occured: {e}")
+            self.get_logger().error(f"[{self.__log_counter}] Error occured: {e}")
 
 
 def main():
