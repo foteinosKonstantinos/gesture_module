@@ -32,6 +32,11 @@ Transitions between coordinate systems:
 <!-- | /dog_odom | Odometry | Input | Orientation should be expresses wr.t. to a global coordinate system (the "standard" xy plane aligned to parallels and meridians) | -->
 | /gesture_command | String | Output | Stringified GeoJSON, see below |
 
+Parameters (`classifier.py`):
+
+-   `NO_UNDERLYING_IMPL`: Make it `False` during integration with the UPC, `True` otherwise (e.g. testing without the UGV interface implementation).
+-   `MAX_FPS`: Maximum FPS. Ignores frames if the current FPS approximation is more than this threshold.
+-   Topics names should also change.
 
 The exact message format has as follows:
 

@@ -11,6 +11,7 @@ import math
 EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
 FPS = 10
+# TF_FREQ = FPS * 10
 
 def euler_to_quaternion(roll, pitch, yaw):
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
@@ -105,10 +106,41 @@ class Producer(Node):
         self.__x_mm = 0.0
         self.__idx = 0
 
-        self.__timer = self.create_timer(1/FPS, self.publish)
-            
+        # self.__tf_timer = self.create_timer(1/TF_FREQ, self.publish_tf)
+        self.__image_timer = self.create_timer(1/FPS, self.publish_img)
 
-    def publish(self, path=PATH):
+    # def publish_tf(self):
+    #     stamp = self.get_clock().now().to_msg()
+
+    #     q = euler_to_quaternion(roll=0, pitch=0, yaw=np.pi/2)
+    #     base_to_map = TransformStamped()
+    #     base_to_map.header.stamp = stamp
+    #     base_to_map.header.frame_id = 'map'
+    #     base_to_map.child_frame_id = 'base_link'
+    #     base_to_map.transform.translation.x = float(self.__x_mm / 1000.0)
+    #     base_to_map.transform.translation.y = 0.0
+    #     base_to_map.transform.translation.z = 0.0
+    #     base_to_map.transform.rotation.x = float(q[0].item())
+    #     base_to_map.transform.rotation.y = float(q[1].item())
+    #     base_to_map.transform.rotation.z = float(q[2].item())
+    #     base_to_map.transform.rotation.w = float(q[3].item())
+    #     self.__broadcaster.sendTransform(base_to_map)
+
+    #     camera_to_base = TransformStamped()
+    #     camera_to_base.header.stamp = stamp
+    #     camera_to_base.header.frame_id = "base_link"
+    #     camera_to_base.child_frame_id = "camera_depth_frame"
+    #     camera_to_base.transform.translation.x = 0.0
+    #     camera_to_base.transform.translation.y = 0.0
+    #     camera_to_base.transform.translation.z = 0.0
+    #     q_camera = euler_to_quaternion(roll=0, pitch=np.pi/2, yaw=0)
+    #     camera_to_base.transform.rotation.x = float(q_camera[0].item())
+    #     camera_to_base.transform.rotation.y = float(q_camera[1].item())
+    #     camera_to_base.transform.rotation.z = float(q_camera[2].item())
+    #     camera_to_base.transform.rotation.w = float(q_camera[3].item())
+    #     self.__broadcaster.sendTransform(camera_to_base)
+
+    def publish_img(self, path=PATH):
         depth_path = f"{path}/{self.__depth_frames[self.__idx]}"
         color_path = f"{path}/{self.__rgb_frames[self.__idx]}"
         self.get_logger().info(f"Publishing {color_path} and {depth_path}...")

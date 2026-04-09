@@ -35,6 +35,8 @@ import time
 # Featch a shovel       => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 # Fetch an axe          => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 
+NO_UNDERLYING_IMPL = True # Change this to False during integration with the UPC
+
 EARTH_RADIUS = 6378137.0 # in meters
 
 CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnetb0_color_pretrained_ext.pt"
@@ -43,7 +45,7 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 CLASSIFICATION_THRESHOLD = 0.95
 POSE_ESTIMATION_THRESHOLD = 0.95
 DEPTH_THRESHOLD = 7000 # in mm
-MAX_FPS = 1.0 # sec
+MAX_FPS = 1.0
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
 
@@ -315,45 +317,52 @@ class Gesture_Classifier(Node):
             msg.goal_pose.orientation.z = float(args["q2"])
             msg.goal_pose.orientation.w = float(args["q3"])
             msg.timeout = -1.0
-            self.__navigation.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__navigation.wait_for_server()
             self.__navigation.send_goal_async(msg)
         
         elif gesture_command == "unfreeze": # Previously named "ok-to-go"
             msg = Trigger.Goal()
             msg.activate = False
-            self.__freeze.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__freeze.wait_for_server()
             self.__freeze.send_goal_async(msg)
         
         elif gesture_command == "move-away-from-here":
             msg = Trigger.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            self.__retreat.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__retreat.wait_for_server()
             self.__retreat.send_goal_async(msg)
         
         elif gesture_command == "operation-finished":
             msg = Trigger.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            self.__return_bos.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__return_bos.wait_for_server()
             self.__return_bos.send_goal_async(msg)
         
         elif gesture_command == "freeze":
             msg = Trigger.Goal()
             msg.activate = True
-            self.__freeze.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__freeze.wait_for_server()
             self.__freeze.send_goal_async(msg)
         
         elif gesture_command == "stop":
             msg = Trigger.Goal()
             msg.activate = True
-            self.__stop.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__stop.wait_for_server()
             self.__stop.send_goal_async(msg)
 
         elif gesture_command == "emergency-situation":
             msg = Trigger.Goal()
             msg.activate = True
-            self.__emergency.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__emergency.wait_for_server()
             self.__emergency.send_goal_async(msg)
 
         elif gesture_command == "i-need-help":
@@ -368,14 +377,16 @@ class Gesture_Classifier(Node):
             msg.target_transform.rotation.w = float(args["q3"])
             msg.help_type = "aids"
             msg.timeout = -1.0
-            self.__help.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__help.wait_for_server()
             self.__help.send_goal_async(msg)
         
         elif gesture_command == "evacuate-the-area": # TODO: map this command to an action
             msg = Trigger.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            self.__return_bos.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__return_bos.wait_for_server()
             self.__return_bos.send_goal_async(msg)
         
         elif gesture_command == "i-lost-connection":
@@ -390,7 +401,8 @@ class Gesture_Classifier(Node):
             msg.target_transform.rotation.w = float(args["q3"])
             msg.help_type = "technical"
             msg.timeout = -1.0
-            self.__help.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__help.wait_for_server()
             self.__help.send_goal_async(msg)
         
         elif gesture_command == "fetch-a-gas-mask":
@@ -398,7 +410,8 @@ class Gesture_Classifier(Node):
             msg.activate = True
             msg.object = "gas_mask"
             msg.timeout = -1.0
-            self.__fetch.wait_for_server()
+            if not NO_UNDERLYING_IMPL:    
+                self.__fetch.wait_for_server()
             self.__fetch.send_goal_async(msg)
         
         elif gesture_command == "fetch-a-shovel":
@@ -406,7 +419,8 @@ class Gesture_Classifier(Node):
             msg.activate = True
             msg.object = "shovel"
             msg.timeout = -1.0
-            self.__fetch.wait_for_server()
+            if not NO_UNDERLYING_IMPL:
+                self.__fetch.wait_for_server()
             self.__fetch.send_goal_async(msg)
         
         elif gesture_command == "fetch-an-axe":
@@ -414,7 +428,8 @@ class Gesture_Classifier(Node):
             msg.activate = True
             msg.object = "axe"
             msg.timeout = -1.0
-            self.__fetch.wait_for_server()
+            if not NO_UNDERLYING_IMPL:    
+                self.__fetch.wait_for_server()
             self.__fetch.send_goal_async(msg)
 
 
