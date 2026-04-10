@@ -18,18 +18,18 @@ import torchvision
 import torchvision.transforms as transforms
 from ultralytics import YOLO
 from torch.nn.functional import softmax
-from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, HelpRequest
+from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, HelpRequest, ReturnToBase
 import time
 
 # Come to me            => NavigateTo           (/b2/local/trigger_navigation)
 # Unfreeze (ok to go)   => Trigger              (/b2/local/trigger_freeze)
 # Move away from here   => Trigger              (/b2/local/trigger_retreat)
-# Operation finished    => Trigger              (/b2/local/trigger_return_to_base)
+# Operation finished    => ReturnToBase         (/b2/local/trigger_return_to_base)
 # Freeze                => Trigger              (/b2/local/trigger_freeze)
 # Stop                  => Trigger              (/b2/local/trigger_stop)
 # Emergency situation   => Trigger              (/b2/global/trigger_emergency)
 # I need help           => HelpRequest          (/b2/local/trigger_help_request)]           [or NavigateTo (/b2/local/trigger_navigation) ?]
-# Evacuate the area     => Trigger              (/b2/local/trigger_return_to_base)          [TODO]
+# Evacuate the area     => ReturnToBase         (/b2/local/trigger_return_to_base)          [TODO]
 # I lost connection     => HelpRequest          (/b2/local/trigger_help_request)
 # Fetch a gas mask      => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 # Featch a shovel       => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
@@ -45,9 +45,10 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 CLASSIFICATION_THRESHOLD = 0.95
 POSE_ESTIMATION_THRESHOLD = 0.95
 DEPTH_THRESHOLD = 7000 # in mm
-MAX_FPS = 1.0
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
+MAX_FPS = 1
+MIN_OCCURS = MAX_FPS
 
 NAV_TOPIC = "/fix"
 DEPTH_TOPIC = "/camera_front/depth"
@@ -148,12 +149,15 @@ class Gesture_Classifier(Node):
         self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
         self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
         self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
-        self.__return_bos = ActionClient(self, Trigger, "/b2/local/trigger_return_to_base")
+        self.__return_bos = ActionClient(self, ReturnToBase, "/b2/local/trigger_return_to_base")
         self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
         
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
         self.__log_counter = 0
         self.__last = None
+
+        self.__previous_command = None
+        self.__counter_command = 0
 
     def __detect_keypoints(self, image, depth_map, names = KEYPOINTS) -> list[dict]:
         '''
@@ -302,10 +306,29 @@ class Gesture_Classifier(Node):
         }
 
 
+    def __ignore_command(self, gesture_command:str) -> bool:
+        if self.__previous_command is None or self.__previous_command != gesture_command:
+            self.__previous_command = gesture_command
+            self.__counter_command = 1
+            return False
+        # previous command = current
+        self.__counter_command += 1
+        if self.__counter_command < MIN_OCCURS:
+            return False
+        # previous = current and it occured many times succesively
+        elif self.__counter_command == int(MIN_OCCURS):
+            return True
+        # previous = current and the action has already been called 
+        else:
+            return False
+
     def __action_calls(self, gesture_command:str, **args): # args in mm
         
         # https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
         
+        if self.__ignore_command(gesture_command):
+            return
+
         if gesture_command == "come-to-me":
             msg = NavigateTo.Goal()
             msg.goal_pose = Pose() # map frame
@@ -431,6 +454,9 @@ class Gesture_Classifier(Node):
             if not NO_UNDERLYING_IMPL:    
                 self.__fetch.wait_for_server()
             self.__fetch.send_goal_async(msg)
+
+        else:
+            self.get_logger().error(f"Unknown command: {gesture_command}")
 
 
     def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix):
