@@ -360,7 +360,7 @@ class Gesture_Classifier(Node):
             self.__retreat.send_goal_async(msg)
         
         elif gesture_command == "operation-finished":
-            msg = Trigger.Goal()
+            msg = ReturnToBase.Goal()
             msg.activate = True
             msg.timeout = -1.0
             if not NO_UNDERLYING_IMPL:
@@ -405,7 +405,7 @@ class Gesture_Classifier(Node):
             self.__help.send_goal_async(msg)
         
         elif gesture_command == "evacuate-the-area": # TODO: map this command to an action
-            msg = Trigger.Goal()
+            msg = ReturnToBase.Goal()
             msg.activate = True
             msg.timeout = -1.0
             if not NO_UNDERLYING_IMPL:
