@@ -36,6 +36,7 @@ import time
 # Fetch an axe          => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 
 NO_UNDERLYING_IMPL = True # Change this to False during integration with the UPC
+DEBUGGING = True
 
 EARTH_RADIUS = 6378137.0 # in meters
 
@@ -310,16 +311,22 @@ class Gesture_Classifier(Node):
         if self.__previous_command is None or self.__previous_command != gesture_command:
             self.__previous_command = gesture_command
             self.__counter_command = 1
-            return False
         # previous command = current
-        self.__counter_command += 1
-        if self.__counter_command < MIN_OCCURS:
-            return False
-        # previous = current and it occured many times succesively
-        elif self.__counter_command == int(MIN_OCCURS):
-            return True
-        # previous = current and the action has already been called 
         else:
+            self.__counter_command += 1
+        if self.__counter_command < MIN_OCCURS:
+            if DEBUGGING:
+                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} < {MIN_OCCURS} for {gesture_command}")
+            return False
+        # it occured many times succesively
+        elif self.__counter_command == int(MIN_OCCURS):
+            if DEBUGGING:
+                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} = {MIN_OCCURS} for {gesture_command}")
+            return True
+        # the action has already been called
+        else:
+            if DEBUGGING:
+                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} > {MIN_OCCURS} for {gesture_command}")
             return False
 
     def __action_calls(self, gesture_command:str, **args): # args in mm
@@ -327,7 +334,10 @@ class Gesture_Classifier(Node):
         # https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
         
         if self.__ignore_command(gesture_command):
+            self.get_logger().warning(f"[{self.__log_counter}] Ignoring {gesture_command}")
             return
+        
+        self.get_logger().info(f"[{self.__log_counter}] ACTION ACCEPTED FOR {gesture_command}")
 
         if gesture_command == "come-to-me":
             msg = NavigateTo.Goal()
@@ -456,7 +466,7 @@ class Gesture_Classifier(Node):
             self.__fetch.send_goal_async(msg)
 
         else:
-            self.get_logger().error(f"Unknown command: {gesture_command}")
+            self.get_logger().error(f"[{self.__log_counter}] Unknown command: {gesture_command}")
 
 
     def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix):

@@ -11,7 +11,6 @@ import math
 EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
 FPS = 10
-# TF_FREQ = FPS * 10
 
 def euler_to_quaternion(roll, pitch, yaw):
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
@@ -60,45 +59,70 @@ class Producer(Node):
         )
         self.__broadcaster = TransformBroadcaster(self)
 
-        self.__depth_frames = [
-            "frames/high_Come-to-me_2_depth.png",
-            "frames/high_Come-to-me_98_depth.png",
-            "frames/high_Come-to-me_1214_depth.png",
-            "frames/high_Emergency-situation_101_depth.png",
-            "frames/high_Evacuate-the-area_175_depth.png",
-            "frames/high_Fetch-a-gas-mask_49_depth.png",
-            "frames/high_Fetch-a-gas-mask_181_depth.png",
-            "frames/high_Fetch-a-shovel_33_depth.png",
-            "frames/high_Freeze_16_depth.png",
-            "frames/high_Freeze_40_depth.png",
-            "frames/high_Freeze_184_depth.png",
-            "frames/high_Ok-to-go_203_depth.png",
-            "frames/high_Ok-to-go_263_depth.png",
-            "frames/STOP_high_16_depth.png",
-            "frames/STOP_high_90_depth.png",
-            "frames/high_Ok-to-go_263_depth.png",   # dummy
-            "frames/high_Ok-to-go_263_depth.png",   # dummy
-        ]
+        # self.__rgb_frames = [
+        #     "frames/high_Come-to-me_2_color.png",
+        #     "frames/high_Come-to-me_98_color.png",
+        #     "frames/high_Come-to-me_1214_color.png",
+        #     "frames/high_Emergency-situation_101_color.png",
+        #     "frames/high_Evacuate-the-area_175_color.png",
+        #     "frames/high_Fetch-a-gas-mask_49_color.png",
+        #     "frames/high_Fetch-a-gas-mask_181_color.png",
+        #     "frames/high_Fetch-a-shovel_33_color.png",
+        #     "frames/high_Freeze_16_color.png",
+        #     "frames/high_Freeze_40_color.png",
+        #     "frames/high_Freeze_184_color.png",
+        #     "frames/high_Ok-to-go_203_color.png",
+        #     "frames/high_Ok-to-go_263_color.png",
+        #     "frames/STOP_high_16_color.png",
+        #     "frames/STOP_high_90_color.png",   
+        #     "frames/multi_person.png",
+        #     "frames/no_person.png",
+        # ]
+
+        # self.__depth_frames = [
+        #     "frames/high_Come-to-me_2_depth.png",
+        #     "frames/high_Come-to-me_98_depth.png",
+        #     "frames/high_Come-to-me_1214_depth.png",
+        #     "frames/high_Emergency-situation_101_depth.png",
+        #     "frames/high_Evacuate-the-area_175_depth.png",
+        #     "frames/high_Fetch-a-gas-mask_49_depth.png",
+        #     "frames/high_Fetch-a-gas-mask_181_depth.png",
+        #     "frames/high_Fetch-a-shovel_33_depth.png",
+        #     "frames/high_Freeze_16_depth.png",
+        #     "frames/high_Freeze_40_depth.png",
+        #     "frames/high_Freeze_184_depth.png",
+        #     "frames/high_Ok-to-go_203_depth.png",
+        #     "frames/high_Ok-to-go_263_depth.png",
+        #     "frames/STOP_high_16_depth.png",
+        #     "frames/STOP_high_90_depth.png",
+        #     "frames/high_Ok-to-go_263_depth.png",   # dummy
+        #     "frames/high_Ok-to-go_263_depth.png",   # dummy
+        # ]
 
         self.__rgb_frames = [
-            "frames/high_Come-to-me_2_color.png",
-            "frames/high_Come-to-me_98_color.png",
-            "frames/high_Come-to-me_1214_color.png",
-            "frames/high_Emergency-situation_101_color.png",
-            "frames/high_Evacuate-the-area_175_color.png",
-            "frames/high_Fetch-a-gas-mask_49_color.png",
-            "frames/high_Fetch-a-gas-mask_181_color.png",
-            "frames/high_Fetch-a-shovel_33_color.png",
-            "frames/high_Freeze_16_color.png",
-            "frames/high_Freeze_40_color.png",
-            "frames/high_Freeze_184_color.png",
-            "frames/high_Ok-to-go_203_color.png",
-            "frames/high_Ok-to-go_263_color.png",
-            "frames/STOP_high_16_color.png",
-            "frames/STOP_high_90_color.png",   
-            "frames/multi_person.png",
-            "frames/no_person.png",
+            
+            "frames2/multi_person.png", # dummy
+            "frames2/multi_person.png", # dummy
+            "frames2/multi_person.png", # dummy
+            "frames2/multi_person.png", # dummy
+            
+            "frames2/high_Come-to-me_338_color.png", # 4 successive
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+
+            "frames2/multi_person.png", # dummy, low confidence
+
+            "frames2/high_Come-to-me_338_color.png", # 2 successive
+            "frames2/high_Come-to-me_338_color.png",
+
+            "frames2/multi_person.png", # dummy, low confidence
+
+            "frames2/high_Come-to-me_338_color.png", # 1 single
+
         ]
+
+        self.__depth_frames = ["frames2/high_Come-to-me_338_depth.png"] * len(self.__rgb_frames)
 
         self.__total = len(self.__rgb_frames)
         assert len(self.__depth_frames) == self.__total
@@ -106,41 +130,9 @@ class Producer(Node):
         self.__x_mm = 0.0
         self.__idx = 0
 
-        # self.__tf_timer = self.create_timer(1/TF_FREQ, self.publish_tf)
-        self.__image_timer = self.create_timer(1/FPS, self.publish_img)
+        self.__timer = self.create_timer(1/FPS, self.publish)
 
-    # def publish_tf(self):
-    #     stamp = self.get_clock().now().to_msg()
-
-    #     q = euler_to_quaternion(roll=0, pitch=0, yaw=np.pi/2)
-    #     base_to_map = TransformStamped()
-    #     base_to_map.header.stamp = stamp
-    #     base_to_map.header.frame_id = 'map'
-    #     base_to_map.child_frame_id = 'base_link'
-    #     base_to_map.transform.translation.x = float(self.__x_mm / 1000.0)
-    #     base_to_map.transform.translation.y = 0.0
-    #     base_to_map.transform.translation.z = 0.0
-    #     base_to_map.transform.rotation.x = float(q[0].item())
-    #     base_to_map.transform.rotation.y = float(q[1].item())
-    #     base_to_map.transform.rotation.z = float(q[2].item())
-    #     base_to_map.transform.rotation.w = float(q[3].item())
-    #     self.__broadcaster.sendTransform(base_to_map)
-
-    #     camera_to_base = TransformStamped()
-    #     camera_to_base.header.stamp = stamp
-    #     camera_to_base.header.frame_id = "base_link"
-    #     camera_to_base.child_frame_id = "camera_depth_frame"
-    #     camera_to_base.transform.translation.x = 0.0
-    #     camera_to_base.transform.translation.y = 0.0
-    #     camera_to_base.transform.translation.z = 0.0
-    #     q_camera = euler_to_quaternion(roll=0, pitch=np.pi/2, yaw=0)
-    #     camera_to_base.transform.rotation.x = float(q_camera[0].item())
-    #     camera_to_base.transform.rotation.y = float(q_camera[1].item())
-    #     camera_to_base.transform.rotation.z = float(q_camera[2].item())
-    #     camera_to_base.transform.rotation.w = float(q_camera[3].item())
-    #     self.__broadcaster.sendTransform(camera_to_base)
-
-    def publish_img(self, path=PATH):
+    def publish(self, path=PATH):
         depth_path = f"{path}/{self.__depth_frames[self.__idx]}"
         color_path = f"{path}/{self.__rgb_frames[self.__idx]}"
         self.get_logger().info(f"Publishing {color_path} and {depth_path}...")
