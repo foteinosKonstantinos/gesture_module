@@ -49,7 +49,7 @@ DEPTH_THRESHOLD = 7000 # in mm
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
 MAX_FPS = 1
-MIN_OCCURS = MAX_FPS
+MIN_OCCURS = 4
 
 NAV_TOPIC = "/fix"
 DEPTH_TOPIC = "/camera_front/depth"
@@ -316,18 +316,18 @@ class Gesture_Classifier(Node):
             self.__counter_command += 1
         if self.__counter_command < MIN_OCCURS:
             if DEBUGGING:
-                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} < {MIN_OCCURS} for {gesture_command}")
-            return False
+                self.get_logger().info(f"[{self.__log_counter}] {self.__counter_command} < {MIN_OCCURS} for {gesture_command}")
+            return True
         # it occured many times succesively
         elif self.__counter_command == int(MIN_OCCURS):
             if DEBUGGING:
-                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} = {MIN_OCCURS} for {gesture_command}")
-            return True
+                self.get_logger().info(f"[{self.__log_counter}] {self.__counter_command} = {MIN_OCCURS} for {gesture_command}")
+            return False
         # the action has already been called
         else:
             if DEBUGGING:
-                self.get_logger().debug(f"[{self.__log_counter}] {self.__counter_command} > {MIN_OCCURS} for {gesture_command}")
-            return False
+                self.get_logger().info(f"[{self.__log_counter}] {self.__counter_command} > {MIN_OCCURS} for {gesture_command}")
+            return True
 
     def __action_calls(self, gesture_command:str, **args): # args in mm
         
@@ -511,6 +511,7 @@ class Gesture_Classifier(Node):
             self.get_logger().info(f"[{self.__log_counter}] {len(all_keypoints)} detected humans")
 
             if len(all_keypoints) == 0:
+                self.__counter_command = 0
                 # self.get_logger().info("No detected person")
                 return
             
@@ -546,6 +547,7 @@ class Gesture_Classifier(Node):
 
             if prediction["confidence"] < self.__classification_threshold:
                 self.get_logger().warn(f"[{self.__log_counter}] Low confidence.")
+                self.__counter_command = 0
                 return
 
             self.get_logger().info(f"[{self.__log_counter}] High confidence, actions are triggered.")

@@ -10,7 +10,7 @@ import math
 
 EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
-FPS = 10
+FPS = 0.5
 
 def euler_to_quaternion(roll, pitch, yaw):
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
@@ -106,7 +106,13 @@ class Producer(Node):
             "frames2/multi_person.png", # dummy
             "frames2/multi_person.png", # dummy
             
-            "frames2/high_Come-to-me_338_color.png", # 4 successive
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+
+            "frames2/multi_person.png", # dummy
+
+            "frames2/high_Come-to-me_338_color.png", # 4+1 successive
+            "frames2/high_Come-to-me_338_color.png",
             "frames2/high_Come-to-me_338_color.png",
             "frames2/high_Come-to-me_338_color.png",
             "frames2/high_Come-to-me_338_color.png",
@@ -133,10 +139,13 @@ class Producer(Node):
         self.__timer = self.create_timer(1/FPS, self.publish)
 
     def publish(self, path=PATH):
+        if self.__idx >= len(self.__rgb_frames):
+            return
         depth_path = f"{path}/{self.__depth_frames[self.__idx]}"
         color_path = f"{path}/{self.__rgb_frames[self.__idx]}"
         self.get_logger().info(f"Publishing {color_path} and {depth_path}...")
-        self.__idx = (self.__idx + 1) % self.__total
+        # self.__idx = (self.__idx + 1) % self.__total
+        self.__idx += 1
 
         depth = np.asarray(PILImage.open(depth_path),dtype=np.uint16)
         color = np.asarray(PILImage.open(color_path).convert("RGB"))
