@@ -10,7 +10,7 @@ import math
 
 EARTH_RADIUS = 6378137.0 # in meters
 PATH = "/app"
-FPS = 0.5
+FPS = 1.0
 
 def euler_to_quaternion(roll, pitch, yaw):
     qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)

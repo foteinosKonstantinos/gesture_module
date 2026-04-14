@@ -46,9 +46,10 @@ POSE_ESTIMATOR = "yolo26n-pose.pt"
 CLASSIFICATION_THRESHOLD = 0.95
 POSE_ESTIMATION_THRESHOLD = 0.95
 DEPTH_THRESHOLD = 7000 # in mm
+MIN_DEPTH_THRESHOLD = 1000 # in mm
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
-MAX_FPS = 1
+MAX_FPS = 2
 MIN_OCCURS = 4
 
 NAV_TOPIC = "/fix"
@@ -337,7 +338,7 @@ class Gesture_Classifier(Node):
             self.get_logger().warning(f"[{self.__log_counter}] Ignoring {gesture_command}")
             return
         
-        self.get_logger().info(f"[{self.__log_counter}] ACTION ACCEPTED FOR {gesture_command}")
+        self.get_logger().info(f"[{self.__log_counter}] \033[32mACTION ACCEPTED FOR {gesture_command}\033[0m")
 
         if gesture_command == "come-to-me":
             msg = NavigateTo.Goal()
@@ -532,25 +533,26 @@ class Gesture_Classifier(Node):
             
             assert argmin_u is not None
             
-            if min_depth > self.__depth_threshold:
-                self.get_logger().warn(f"[{self.__log_counter}] Distance from camera ({min_depth}) exceeds threshold ({self.__depth_threshold}) (mm)")
+            if min_depth > self.__depth_threshold or min_depth < MIN_DEPTH_THRESHOLD:
+                self.get_logger().warn(f"[{self.__log_counter}] Distance from camera ({min_depth}) exceeds threshold (> {self.__depth_threshold}) or < {MIN_DEPTH_THRESHOLD} (mm)")
                 return
             
-            rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-            base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
-            abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
-            gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
-            
             prediction = self.__predict_from_image(color_image_array)
-            
-            self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
+            self.get_logger().info(f"[{self.__log_counter}] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
             if prediction["confidence"] < self.__classification_threshold:
                 self.get_logger().warn(f"[{self.__log_counter}] Low confidence.")
                 self.__counter_command = 0
                 return
+            
+            self.get_logger().info(f"[{self.__log_counter}] High confidence, actions will be triggered.")
 
-            self.get_logger().info(f"[{self.__log_counter}] High confidence, actions are triggered.")
+            rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+            base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
+            abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
+            gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
+            
+            self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)]")
             
             self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
 

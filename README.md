@@ -15,6 +15,8 @@ Transitions between coordinate systems:
 - gps: GPS or global or absolute (longitude, latitude)
 - abs_xy: Absolute xy (i.e. the "tangent" plane, oriented by the meridians and parallels)
 
+![Block diagram](BLOCK-DIAGRAM.drawio.png)
+
 > ***TODO: Integrate with UPC***
 
 > Use the `JETSON-Dockerfile` for deployment on Jetson
@@ -229,6 +231,8 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 
 ### Instructions for setup (Docker)
+
+Sudo may be required.
 
 To build the image:
 ```bash
