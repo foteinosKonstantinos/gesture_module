@@ -17,8 +17,6 @@ Transitions between coordinate systems:
 
 ![Block diagram](BLOCK-DIAGRAM.drawio.png)
 
-> ***TODO: Integrate with UPC***
-
 > Use the `JETSON-Dockerfile` for deployment on Jetson
 
 <!-- `docker exec -it <container ID> bash -c "source /opt/ros/humble/setup.bash;source ./install/local_setup.bash;ros2 run gesture_recognition producer"` -->
@@ -27,12 +25,12 @@ Transitions between coordinate systems:
 
 | Topic name | Message type | Usage | Details |
 | --- | --- | --- | --- |
-| /camera_front/color | Image | Input | 8-bit RGB (H x W x 3) |
-| /camera_front/depth | Image | Input | 16UC1 in mm (H x W x 2) aligned to the RGB |
-| /camera_front/camera_info | CameraInfo | Input | - |
+| /camera_front_435i/realsense_front_435i/color/image_raw | Image | Input | 8-bit RGB (H x W x 3) |
+| /camera_front_435i/realsense_front_435i/depth/image_rect_raw | Image | Input | 16UC1 in mm (H x W x 2) aligned to the RGB |
+| /camera_front_435i/realsense_front_435i/color/camera_info | CameraInfo | Input | - |
 | /fix | NavSatFix | Input | - |
-<!-- | /dog_odom | Odometry | Input | Orientation should be expresses wr.t. to a global coordinate system (the "standard" xy plane aligned to parallels and meridians) | -->
 | /gesture_command | String | Output | Stringified GeoJSON, see below |
+<!-- | /dog_odom | Odometry | Input | Orientation should be expresses wr.t. to a global coordinate system (the "standard" xy plane aligned to parallels and meridians) | -->
 
 Parameters (`classifier.py`):
 

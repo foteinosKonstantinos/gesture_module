@@ -37,10 +37,12 @@ import time
 
 NO_UNDERLYING_IMPL = True # Change this to False during integration with the UPC
 DEBUGGING = True
+TRANSFORMATIONS_AVAILABLE = False
+FIX_AVAILABLE = False
 
 EARTH_RADIUS = 6378137.0 # in meters
 
-CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/efficientnetb0_color_pretrained_ext.pt"
+CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/yolo26m-cls-FR-GESTURE.pt"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 
 CLASSIFICATION_THRESHOLD = 0.95
@@ -52,28 +54,47 @@ SLOP = 1e-1
 MAX_FPS = 2
 MIN_OCCURS = 4
 
+# DEPTH_TOPIC = "/camera_front/depth"
+# RGB_TOPIC = "/camera_front/color"
+# CAMERA_INFO = "/camera_front/camera_info"
 NAV_TOPIC = "/fix"
-DEPTH_TOPIC = "/camera_front/depth"
-RGB_TOPIC = "/camera_front/color"
-CAMERA_INFO = "/camera_front/camera_info"
+DEPTH_TOPIC = "/camera_front_435i/realsense_front_435i/depth/image_rect_raw"
+RGB_TOPIC = "/camera_front_435i/realsense_front_435i/color/image_raw"
+CAMERA_INFO = "/camera_front_435i/realsense_front_435i/color/camera_info"
 OUTPUT_TOPIC = "/gesture_command"
 
 # Gesture commands. The ordering is crucial.
-CLASSES = [
-    "fetch-a-gas-mask", # G0
-    "come-to-me", # G1
-    "unfreeze", # G10 (previously named "ok-to-go")
-    "move-away-from-here", # G11
-    "stop", # G12
-    "operation-finished", # G2
-    "freeze", # G3
-    "emergency-situation", # G4
-    "i-need-help", # G5
-    "evacuate-the-area", # G6
-    "i-lost-connection", # G7
-    "fetch-a-shovel", # G8
-    "fetch-an-axe" # G9
-]
+# CLASSES = [
+#     "fetch-a-gas-mask", # G0
+#     "come-to-me", # G1
+#     "unfreeze", # G10 (previously named "ok-to-go")
+#     "move-away-from-here", # G11
+#     "stop", # G12
+#     "operation-finished", # G2
+#     "freeze", # G3
+#     "emergency-situation", # G4
+#     "i-need-help", # G5
+#     "evacuate-the-area", # G6
+#     "i-lost-connection", # G7
+#     "fetch-a-shovel", # G8
+#     "fetch-an-axe" # G9
+# ]
+
+CLASSES = {
+    "0": "fetch-a-gas-mask",
+    "1": "come-to-me",
+    "2": "operation-finished",
+    "3": "freeze",
+    "4": "emergency-situation",
+    "5": "i-need-help",
+    "6": "evacuate-the-area",
+    "7": "i-lost-connection",
+    "8": "fetch-a-shovel",
+    "9": "fetch-an-axe",
+    "10": "ok-to-go",
+    "11": "move-away-from-here",
+    "12": "stop"
+}
 
 KEYPOINTS = [
     "Nose",
@@ -116,8 +137,7 @@ class Gesture_Classifier(Node):
                 Subscriber(self, Image, color_topic), 
                 Subscriber(self, Image, depth_topic), 
                 Subscriber(self, CameraInfo, camera_info),
-                Subscriber(self, NavSatFix, nav_fix_topic)
-            ],
+            ] + ([Subscriber(self, NavSatFix, nav_fix_topic)] if FIX_AVAILABLE else []),
             queue_size=10,
             slop=SLOP
         )
@@ -128,31 +148,37 @@ class Gesture_Classifier(Node):
             qos_profile = 10
         )
         self.__device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
-        self.__classifier.load_state_dict(torch.load(classifier,map_location=torch.device(self.__device)))
-        self.__classifier = self.__classifier.to(self.__device)
-        self.__classifier.eval()
-        self.__to_tensor = transforms.ToTensor()
-        self.__resize = transforms.Resize((224,224))
+        # self.__classifier = torchvision.models.efficientnet_b0(num_classes=len(CLASSES))
+        # self.__classifier.load_state_dict(torch.load(classifier,map_location=torch.device(self.__device)))
+        # self.__classifier = self.__classifier.to(self.__device)
+        # self.__classifier.eval()
+        # self.__to_tensor = transforms.ToTensor()
+        # self.__resize = transforms.Resize((224,224))
+        self.__classifier = YOLO(classifier).to(self.__device)
+        self.__pose_estimator = YOLO(pose_estimator).to(self.__device)
+
         self.__classification_threshold = classification_threshold
-        self.__pose_estimator = YOLO(pose_estimator)
         self.__pose_estimation_threshold = pose_estimation_threshold
         self.__depth_threshold = depth_threshold
+        
         self.__counter = 0
         
         self.__init_latitude = None
         self.__init_longitude = None
-        self.__tf_buffer = tf2_ros.Buffer()
-        self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)
+        
+        if TRANSFORMATIONS_AVAILABLE:
 
-        self.__stop = ActionClient(self, Trigger, "/b2/local/trigger_stop")
-        self.__help = ActionClient(self, HelpRequest, "/b2/local/trigger_help_request")
-        self.__fetch = ActionClient(self, ReturnToBaseFetch, "/b2/local/trigger_return_to_base_fetch")
-        self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
-        self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
-        self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
-        self.__return_bos = ActionClient(self, ReturnToBase, "/b2/local/trigger_return_to_base")
-        self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
+            self.__tf_buffer = tf2_ros.Buffer()
+            self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)
+
+            self.__stop = ActionClient(self, Trigger, "/b2/local/trigger_stop")
+            self.__help = ActionClient(self, HelpRequest, "/b2/local/trigger_help_request")
+            self.__fetch = ActionClient(self, ReturnToBaseFetch, "/b2/local/trigger_return_to_base_fetch")
+            self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
+            self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
+            self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
+            self.__return_bos = ActionClient(self, ReturnToBase, "/b2/local/trigger_return_to_base")
+            self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
         
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
         self.__log_counter = 0
@@ -176,7 +202,9 @@ class Gesture_Classifier(Node):
                 ...
             ]
         '''
-        result = self.__pose_estimator(image, verbose=False)[0].keypoints.data
+        all_result = self.__pose_estimator(image, verbose=False)[0]
+        all_result.save("vis.png")
+        result = all_result.keypoints.data
         keypoints = []
         for person in range(len(result)):
             keypoints.append(dict({}))
@@ -298,10 +326,13 @@ class Gesture_Classifier(Node):
 
         
     def __predict_from_image(self, image, classes=CLASSES):
-        probabilities = softmax(self.__classifier(self.__resize((self.__to_tensor(image)/255).unsqueeze(dim=0)).to(self.__device))[0]).detach().cpu().numpy()
-        argmax = probabilities.argmax()
-        pred_class = classes[argmax]
-        confidence = probabilities[argmax].item()
+        # probabilities = softmax(self.__classifier(self.__resize((self.__to_tensor(image)/255).unsqueeze(dim=0)).to(self.__device))[0]).detach().cpu().numpy()
+        # argmax = probabilities.argmax()
+        # pred_class = classes[argmax]
+        # confidence = probabilities[argmax].item()
+        result = self.__classifier(image, verbose=False)[0]
+        confidence = result.probs.top1conf.item()
+        pred_class = classes[result.names[result.probs.top1]]
         return {
             "class": pred_class,
             "confidence": confidence
@@ -470,7 +501,7 @@ class Gesture_Classifier(Node):
             self.get_logger().error(f"[{self.__log_counter}] Unknown command: {gesture_command}")
 
 
-    def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix):
+    def __main_callback(self, color_image:Image, depth_map:Image, intrinsics:CameraInfo, global_position:NavSatFix=None):
         '''
         Parameters:
             color_image:    8-bit RGB image (H x W x 3)
@@ -502,18 +533,32 @@ class Gesture_Classifier(Node):
             #     self.get_logger().error("Invalid input (e.g. RGBD frames dimensions may mismatch).")
             #     return
 
-            self.__register_initial_gps(global_position)
-            self.get_logger().info(f"[{self.__log_counter}] Received RGBD frames of size {color_image.height} x {color_image.width} (H x W) at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm) ((0,0) is the initial)")
+            if FIX_AVAILABLE:
+                self.__register_initial_gps(global_position)
+            self.get_logger().info(f"[{self.__log_counter}] Received RGBD frames of size {color_image.height} x {color_image.width} (H x W)" +
+                                    (f" at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm) ((0,0) is the initial)" if FIX_AVAILABLE else ""))
             
-            color_image_array = np.asarray(color_image.data, dtype=np.float32).reshape((color_image.height, color_image.width, 3)) # H x W x 3
-            depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
-            
+            # color_image_array = np.asarray(color_image.data, dtype=np.uint8).reshape((color_image.height, color_image.width, 3)) # H x W x 3
+            # depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
+
+            yuyv = np.frombuffer(color_image.data, dtype=np.uint8)
+            yuyv = yuyv.reshape((color_image.height, color_image.width, 2))
+            bgr = cv2.cvtColor(yuyv, cv2.COLOR_YUV2BGR_YUY2)
+            color_image_array = bgr.reshape((color_image.height, color_image.width, 3))
+            if DEBUGGING:
+                cv2.imwrite("color.png", color_image_array)
+
+            depth_map_array = np.frombuffer(depth_map.data, dtype=np.uint16).reshape((depth_map.height, depth_map.width))
+            if DEBUGGING:
+                cv2.imwrite("depth.png", depth_map_array)
+
             all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
             self.get_logger().info(f"[{self.__log_counter}] {len(all_keypoints)} detected humans")
 
             if len(all_keypoints) == 0:
                 self.__counter_command = 0
-                # self.get_logger().info("No detected person")
+                if DEBUGGING:
+                    self.get_logger().info("No detected person")
                 return
             
             argmin_u = None
@@ -531,13 +576,15 @@ class Gesture_Classifier(Node):
                     min_depth = depth
                     argmin_idx = idx
             
-            assert argmin_u is not None
-            
+            if argmin_u is None:
+                self.get_logger().warn(f"[{self.__log_counter}] Cannot infer human distance")
+                return
+
             if min_depth > self.__depth_threshold or min_depth < MIN_DEPTH_THRESHOLD:
                 self.get_logger().warn(f"[{self.__log_counter}] Distance from camera ({min_depth}) exceeds threshold (> {self.__depth_threshold}) or < {MIN_DEPTH_THRESHOLD} (mm)")
                 return
             
-            prediction = self.__predict_from_image(color_image_array)
+            prediction = self.__predict_from_image(image=color_image_array)
             self.get_logger().info(f"[{self.__log_counter}] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
             if prediction["confidence"] < self.__classification_threshold:
@@ -545,16 +592,18 @@ class Gesture_Classifier(Node):
                 self.__counter_command = 0
                 return
             
-            self.get_logger().info(f"[{self.__log_counter}] High confidence, actions will be triggered.")
+            if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE:
 
-            rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-            base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
-            abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
-            gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
-            
-            self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)]")
-            
-            self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
+                self.get_logger().info(f"[{self.__log_counter}] High confidence, actions will be triggered.")
+
+                rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+                base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
+                abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
+                gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
+                
+                self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)]")
+                
+                self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
 
             self.__publisher.publish(String(data=json.dumps({
                 "type": "FeatureCollection",
@@ -563,7 +612,7 @@ class Gesture_Classifier(Node):
                         "type": "Feature",
                         "geometry": {
                             "type": "Point",
-                            "coordinates": list(gps)
+                            "coordinates": list(gps) if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE else None
                         },
                         "properties": {
                             "class":prediction["class"],
@@ -576,7 +625,7 @@ class Gesture_Classifier(Node):
                                 "rel_x":rel_xyz[0],
                                 "rel_y":rel_xyz[1],
                                 "rel_z":rel_xyz[2]
-                            }
+                            } if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE else None
                         }
                     }
                 ]

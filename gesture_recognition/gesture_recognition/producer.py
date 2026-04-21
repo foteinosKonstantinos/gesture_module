@@ -39,17 +39,17 @@ class Producer(Node):
         
         self.__color_publisher=self.create_publisher(
             msg_type = SensorImage,
-            topic = "/camera_front/color",
+            topic = "/camera_front_435i/realsense_front_435i/color/image_raw",
             qos_profile = 10
         )
         self.__depth_publisher=self.create_publisher(
             msg_type = SensorImage,
-            topic = "/camera_front/depth",
+            topic = "/camera_front_435i/realsense_front_435i/depth/image_rect_raw",
             qos_profile = 10
         )
         self.__info_publisher=self.create_publisher(
             msg_type=CameraInfo,
-            topic="/camera_front/camera_info",
+            topic="/camera_front_435i/realsense_front_435i/color/camera_info",
             qos_profile = 10
         )
         self.__gps_publisher=self.create_publisher(
