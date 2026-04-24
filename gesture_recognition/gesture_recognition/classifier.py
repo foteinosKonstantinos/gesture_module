@@ -14,10 +14,10 @@ import json
 import math
 import numpy as np
 import torch
-import torchvision
-import torchvision.transforms as transforms
+# import torchvision
+# import torchvision.transforms as transforms
 from ultralytics import YOLO
-from torch.nn.functional import softmax
+# from torch.nn.functional import softmax
 from robal_interfaces.action import NavigateTo, Trigger, ReturnToBaseFetch, HelpRequest, ReturnToBase
 import time
 
@@ -28,14 +28,14 @@ import time
 # Freeze                => Trigger              (/b2/local/trigger_freeze)
 # Stop                  => Trigger              (/b2/local/trigger_stop)
 # Emergency situation   => Trigger              (/b2/global/trigger_emergency)
-# I need help           => HelpRequest          (/b2/local/trigger_help_request)]           [or NavigateTo (/b2/local/trigger_navigation) ?]
+# I need help           => HelpRequest          (/b2/local/trigger_help_request)            [or NavigateTo (/b2/local/trigger_navigation) ?]
 # Evacuate the area     => ReturnToBase         (/b2/local/trigger_return_to_base)          [TODO]
 # I lost connection     => HelpRequest          (/b2/local/trigger_help_request)
 # Fetch a gas mask      => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 # Featch a shovel       => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 # Fetch an axe          => ReturnToBaseFetch    (/b2/local/trigger_return_to_base_fetch)
 
-NO_UNDERLYING_IMPL = True # Change this to False during integration with the UPC
+NO_UNDERLYING_IMPL = False # Change this to False during integration with the UPC
 DEBUGGING = True
 TRANSFORMATIONS_AVAILABLE = False
 FIX_AVAILABLE = False
@@ -45,22 +45,22 @@ EARTH_RADIUS = 6378137.0 # in meters
 CLASSIFICATION_MODEL = "/app/gesture_recognition/gesture_recognition/yolo26m-cls-FR-GESTURE.pt"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 
-CLASSIFICATION_THRESHOLD = 0.95
-POSE_ESTIMATION_THRESHOLD = 0.95
-DEPTH_THRESHOLD = 7000 # in mm
+CLASSIFICATION_THRESHOLD = 0.80
+POSE_ESTIMATION_THRESHOLD = 0.80
+DEPTH_THRESHOLD = 100000 # in mm
 MIN_DEPTH_THRESHOLD = 1000 # in mm
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
-MAX_FPS = 2
+MAX_FPS = 10
 MIN_OCCURS = 4
 
 # DEPTH_TOPIC = "/camera_front/depth"
 # RGB_TOPIC = "/camera_front/color"
 # CAMERA_INFO = "/camera_front/camera_info"
 NAV_TOPIC = "/fix"
-DEPTH_TOPIC = "/camera_front_435i/realsense_front_435i/depth/image_rect_raw"
-RGB_TOPIC = "/camera_front_435i/realsense_front_435i/color/image_raw"
-CAMERA_INFO = "/camera_front_435i/realsense_front_435i/color/camera_info"
+DEPTH_TOPIC = "/b2/camera_front_435i/realsense_front_435i/depth/image_rect_raw"
+RGB_TOPIC = "/b2/camera_front_435i/realsense_front_435i/color/image_raw"
+CAMERA_INFO = "/b2/camera_front_435i/realsense_front_435i/color/camera_info"
 OUTPUT_TOPIC = "/gesture_command"
 
 # Gesture commands. The ordering is crucial.
@@ -171,14 +171,14 @@ class Gesture_Classifier(Node):
             self.__tf_buffer = tf2_ros.Buffer()
             self.__tf_listener = tf2_ros.TransformListener(self.__tf_buffer, self)
 
-            self.__stop = ActionClient(self, Trigger, "/b2/local/trigger_stop")
-            self.__help = ActionClient(self, HelpRequest, "/b2/local/trigger_help_request")
-            self.__fetch = ActionClient(self, ReturnToBaseFetch, "/b2/local/trigger_return_to_base_fetch")
-            self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
-            self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
-            self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
-            self.__return_bos = ActionClient(self, ReturnToBase, "/b2/local/trigger_return_to_base")
-            self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
+        self.__stop = ActionClient(self, Trigger, "/b2/local/trigger_stop")
+        self.__help = ActionClient(self, HelpRequest, "/b2/local/trigger_help_request")
+        self.__fetch = ActionClient(self, ReturnToBaseFetch, "/b2/local/trigger_return_to_base_fetch")
+        self.__freeze = ActionClient(self, Trigger, "/b2/local/trigger_freeze")
+        self.__retreat = ActionClient(self, Trigger, "/b2/local/trigger_retreat")
+        self.__emergency = ActionClient(self, Trigger, "/b2/global/trigger_emergency")
+        self.__return_bos = ActionClient(self, ReturnToBase, "/b2/local/trigger_return_to_base")
+        self.__navigation = ActionClient(self, NavigateTo, "/b2/local/trigger_navigation")
         
         self.get_logger().info(f"Successfully initialized the classification node, with weights {classifier} running on {self.__device}.")
         self.__log_counter = 0
@@ -203,8 +203,9 @@ class Gesture_Classifier(Node):
             ]
         '''
         all_result = self.__pose_estimator(image, verbose=False)[0]
-        all_result.save("vis.png")
         result = all_result.keypoints.data
+        if DEBUGGING and len(result)>0:
+            all_result.save("vis.png")
         keypoints = []
         for person in range(len(result)):
             keypoints.append(dict({}))
@@ -369,9 +370,10 @@ class Gesture_Classifier(Node):
             self.get_logger().warning(f"[{self.__log_counter}] Ignoring {gesture_command}")
             return
         
-        self.get_logger().info(f"[{self.__log_counter}] \033[32mACTION ACCEPTED FOR {gesture_command}\033[0m")
+        self.get_logger().info(f"[{self.__log_counter}] \033[1;102mACTION ACCEPTED FOR {gesture_command}\033[0;0m")
 
         if gesture_command == "come-to-me":
+            return
             msg = NavigateTo.Goal()
             msg.goal_pose = Pose() # map frame
             msg.goal_pose.position.x = float(args["x"]) / 1000 # convert to meters
@@ -386,7 +388,7 @@ class Gesture_Classifier(Node):
                 self.__navigation.wait_for_server()
             self.__navigation.send_goal_async(msg)
         
-        elif gesture_command == "unfreeze": # Previously named "ok-to-go"
+        elif gesture_command == "ok-to-go": # Previously named "ok-to-go", unfreeze
             msg = Trigger.Goal()
             msg.activate = False
             if not NO_UNDERLYING_IMPL:
@@ -431,6 +433,7 @@ class Gesture_Classifier(Node):
             self.__emergency.send_goal_async(msg)
 
         elif gesture_command == "i-need-help":
+            return
             msg = HelpRequest.Goal()
             msg.target_transform = Transform()
             msg.target_transform.translation.x = float(args["x"]) / 1000
@@ -455,6 +458,7 @@ class Gesture_Classifier(Node):
             self.__return_bos.send_goal_async(msg)
         
         elif gesture_command == "i-lost-connection":
+            return
             msg = HelpRequest.Goal()
             msg.target_transform = Transform()
             msg.target_transform.translation.x = float(args["x"]) / 1000
@@ -592,18 +596,18 @@ class Gesture_Classifier(Node):
                 self.__counter_command = 0
                 return
             
-            if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE:
+            # if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE:
 
-                self.get_logger().info(f"[{self.__log_counter}] High confidence, actions will be triggered.")
+            self.get_logger().info(f"[{self.__log_counter}] High confidence, actions will be triggered.")
 
-                rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
-                base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
-                abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
-                gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
+                # rel_xyz = self.__uvd_to_rel_xyz(u=argmin_u,v=argmin_v,depth=min_depth,intrinsics=np.asarray(intrinsics.k).reshape((3,3)))
+                # base_xyz = self.__rel_xyz_to_base_xyz(rel_xyz,color_image.header.stamp)
+                # abs_xyz = self.__base_xyz_to_abs_xyz(base_xyz,color_image.header.stamp)
+                # gps = self.__abs_xy_to_gps(x=abs_xyz[0],y=abs_xyz[1]) # lon, lat
                 
-                self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)]")
+                # self.get_logger().info(f"[{self.__log_counter}] Detection position: {gps} (GPS) [or ({self.__gps_to_abs_xy(lat=gps[1],lon=gps[0])}) (xy in mm)]")
                 
-                self.__action_calls(prediction["class"], x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
+            self.__action_calls(prediction["class"])#, x=abs_xyz[0], y=abs_xyz[1], z=abs_xyz[2], q0=0, q1=0, q2=0, q3=1)
 
             self.__publisher.publish(String(data=json.dumps({
                 "type": "FeatureCollection",
@@ -612,7 +616,7 @@ class Gesture_Classifier(Node):
                         "type": "Feature",
                         "geometry": {
                             "type": "Point",
-                            "coordinates": list(gps) if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE else None
+                            "coordinates": None#list(gps) if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE else None
                         },
                         "properties": {
                             "class":prediction["class"],
@@ -622,9 +626,9 @@ class Gesture_Classifier(Node):
                             "timestamp":self.get_clock().now().nanoseconds,
                             "keypoints_and_depths": all_keypoints[argmin_idx],
                             "camera_frame_position": {
-                                "rel_x":rel_xyz[0],
-                                "rel_y":rel_xyz[1],
-                                "rel_z":rel_xyz[2]
+                                # "rel_x":rel_xyz[0],
+                                # "rel_y":rel_xyz[1],
+                                # "rel_z":rel_xyz[2]
                             } if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE else None
                         }
                     }
@@ -646,3 +650,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
