@@ -16,6 +16,7 @@ wget https://nvidia.box.com/shared/static/zvultzsmd4iuheykxy17s4l2n91ylpl8.whl -
 wget https://nvidia.box.com/shared/static/u0ziu01c0kyji4zz3gxam79181nebylf.whl -O torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
 pip install torch-2.3.0-cp310-cp310-linux_aarch64.whl
 pip install torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
+rm *.whl
 
 echo "Installing ultralytics compatible with the previous torch versions ..."
 pip install numpy==1.26.4 opencv-python==4.10.0.84 ultralytics

@@ -4,7 +4,7 @@
 
 **Contact info: kfoteinos@hua.gr**
 
-TODO: NATIVE INTEGRATION, CHANGE README
+TODO: TEST
 
 ### General information
 

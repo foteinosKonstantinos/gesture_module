@@ -51,7 +51,7 @@ DEPTH_THRESHOLD = 100000 # in mm
 MIN_DEPTH_THRESHOLD = 1000 # in mm
 TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
-MAX_FPS = 10
+MAX_FPS = 2
 MIN_OCCURS = 4
 
 # DEPTH_TOPIC = "/camera_front/depth"
@@ -561,6 +561,7 @@ class Gesture_Classifier(Node):
 
             if len(all_keypoints) == 0:
                 self.__counter_command = 0
+                self.__previous_command = None
                 if DEBUGGING:
                     self.get_logger().info("No detected person")
                 return
@@ -581,10 +582,14 @@ class Gesture_Classifier(Node):
                     argmin_idx = idx
             
             if argmin_u is None:
+                self.__counter_command = 0
+                self.__previous_command = None
                 self.get_logger().warn(f"[{self.__log_counter}] Cannot infer human distance")
                 return
 
             if min_depth > self.__depth_threshold or min_depth < MIN_DEPTH_THRESHOLD:
+                self.__counter_command = 0
+                self.__previous_command = None
                 self.get_logger().warn(f"[{self.__log_counter}] Distance from camera ({min_depth}) exceeds threshold (> {self.__depth_threshold}) or < {MIN_DEPTH_THRESHOLD} (mm)")
                 return
             
@@ -592,8 +597,9 @@ class Gesture_Classifier(Node):
             self.get_logger().info(f"[{self.__log_counter}] Depth: {min_depth} (mm) Class: {prediction['class']} Confidence: {prediction['confidence']}")
 
             if prediction["confidence"] < self.__classification_threshold:
-                self.get_logger().warn(f"[{self.__log_counter}] Low confidence.")
                 self.__counter_command = 0
+                self.__previous_command = None
+                self.get_logger().warn(f"[{self.__log_counter}] Low confidence.")
                 return
             
             # if TRANSFORMATIONS_AVAILABLE and FIX_AVAILABLE:
