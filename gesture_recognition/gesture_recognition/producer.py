@@ -9,7 +9,7 @@ from rclpy.executors import ExternalShutdownException
 import math
 
 EARTH_RADIUS = 6378137.0 # in meters
-PATH = "/app"
+PATH = "/home/triffid/hua_ws/gesture_module"
 FPS = 1.0
 
 def euler_to_quaternion(roll, pitch, yaw):

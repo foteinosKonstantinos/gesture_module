@@ -4,7 +4,7 @@
 
 **Contact info: kfoteinos@hua.gr**
 
-<span color="red">TODO: NATIVE INTEGRATION</span>
+TODO: NATIVE INTEGRATION, CHANGE README
 
 ### General information
 
@@ -229,6 +229,91 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 **Important:** No messages are produced if the pose estimator fails and/or the gesture prediction confidence is less than a threshold.
 
+### Native installation
+
+Create a python virtual environment:
+
+```bash
+python3 -m venv gesture_commander_venv
+```
+
+Download Jetson Jetpack 6 torch & torchvision wheels:
+
+```bash
+wget https://nvidia.box.com/shared/static/zvultzsmd4iuheykxy17s4l2n91ylpl8.whl -O torch-2.3.0-cp310-cp310-linux_aarch64.whl
+wget https://nvidia.box.com/shared/static/u0ziu01c0kyji4zz3gxam79181nebylf.whl -O torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
+```
+
+Modify the `executable` property in `gesture_recognition/setup.cfg`:
+```ini
+[build_scripts]
+executable=<path to venv>/gesture_commander_venv/bin/python3
+[develop]
+script_dir=$base/lib/gesture_recognition
+[install]
+install_scripts=$base/lib/gesture_recognition
+```
+
+Optionally, to generate dummy data for testing; modify the `PATH` global variable in `gesture_recognition/gesture_recognition/producer.py`:
+```python
+EARTH_RADIUS = 6378137.0 # in meters
+PATH = <path to gesture module>
+FPS = 1.0
+```
+
+Activate it:
+```bash
+source ./gesture_commander_venv/bin/activate
+```
+
+Install wheels:
+```bash
+pip install torch-2.3.0-cp310-cp310-linux_aarch64.whl
+pip install torchvision-0.18.0a0+6043bc2-cp310-cp310-linux_aarch64.whl
+```
+
+Install dependencies:
+```bash
+pip3 install numpy==1.26.4 opencv-python==4.10.0.84 ultralytics
+```
+
+Clean build trash:
+```bash
+rm -rf build install log
+```
+
+Setup UPC interface:
+```bash
+source /home/triffid/upc_ws/install/setup.bash
+```
+
+Rebuild the package:
+```bash
+colcon build --packages-select gesture_recognition
+```
+
+Install the package:
+```bash
+source ./install/local_setup.bash
+```
+
+Run the classification node:
+```bash
+ros2 run gesture_recognition gesture_classifier
+```
+
+Run the stub producer:
+```bash
+ros2 run gesture_recognition producer
+```
+
+View the detections topic:
+```bash
+ros2 topic echo gesture_command --once --full
+```
+
+------------------------------------------------------------
+------------------------------------------------------------
 
 ### Instructions for setup (Docker)
 
