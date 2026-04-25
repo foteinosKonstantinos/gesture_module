@@ -42,7 +42,7 @@ FIX_AVAILABLE = False
 
 EARTH_RADIUS = 6378137.0 # in meters
 
-CLASSIFICATION_MODEL = "yolo26m-cls-FR-GESTURE.pt"
+CLASSIFICATION_MODEL = "/home/triffid/hua_ws/gesture_module/gesture_recognition/gesture_recognition/yolo26m-cls-FR-GESTURE.pt"
 POSE_ESTIMATOR = "yolo26n-pose.pt"
 
 CLASSIFICATION_THRESHOLD = 0.80
