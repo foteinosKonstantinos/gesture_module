@@ -4,6 +4,7 @@ VENV_NAME="gesture_commander_venv"
 
 echo "Creating virtual environment named $VENV_NAME ... "
 python3 -m venv $VENV_NAME
+touch ./$VENV_NAME/COLCON_IGNORE
 
 source ./$VENV_NAME/bin/activate
 echo "Python path: $(which python3)"
@@ -20,4 +21,4 @@ echo "Installing ultralytics compatible with the previous torch versions ..."
 pip install numpy==1.26.4 opencv-python==4.10.0.84 ultralytics
 pip install colcon-common-extensions setuptools==58.2.0
 
-echo "Finished. Please update setup.cfg and execute 'source ./$VENV_NAME/bin/activate'."
+echo "Finished. Please update setup.cfg (and execute 'source ./$VENV_NAME/bin/activate' to activate the env)."

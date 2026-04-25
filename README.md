@@ -229,7 +229,15 @@ See also the example below, produced by the command `ros2 topic echo /gesture_co
 
 **Important:** No messages are produced if the pose estimator fails and/or the gesture prediction confidence is less than a threshold.
 
-### Native installation
+### Native installation (scripts)
+
+```bash
+chmod +x compile_and_run.sh setup_venv.sh run_producer.sh
+./setup_venv.sh
+./compile_and_run.sh
+```
+
+### Native installation (manually)
 
 Create a python virtual environment:
 
