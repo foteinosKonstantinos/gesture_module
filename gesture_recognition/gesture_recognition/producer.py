@@ -134,6 +134,23 @@ class Producer(Node):
             "frames2/high_Come-to-me_338_color.png",
             "frames2/high_Come-to-me_338_color.png",
 
+            "frames2/multi_person.png", # dummy, low confidence
+
+            "frames2/high_Come-to-me_338_color.png", # 4+1 successive
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+
+            "frames2/high_Emergency-situation_341_color.png", # 4 + 1
+            "frames2/high_Emergency-situation_341_color.png",
+            "frames2/high_Emergency-situation_341_color.png",
+            "frames2/high_Emergency-situation_341_color.png",
+            "frames2/high_Emergency-situation_341_color.png",
+
+            "frames2/multi_person.png", # dummy, low confidence
+
+            "frames2/high_Emergency-situation_341_color.png"
 
         ]
 

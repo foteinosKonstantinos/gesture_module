@@ -39,6 +39,7 @@ NO_UNDERLYING_IMPL = False # Change this to False during integration with the UP
 DEBUGGING = True
 TRANSFORMATIONS_AVAILABLE = False
 FIX_AVAILABLE = False
+SIMULATION = False
 
 EARTH_RADIUS = 6378137.0 # in meters
 
@@ -365,10 +366,11 @@ class Gesture_Classifier(Node):
 
     def __call_server(self, server, msg):
         if not NO_UNDERLYING_IMPL:
-            if server.wait_for_server(timeout_sec=SERVER_TIMEOUT):
-                server.send_goal_async(msg)
-            else:
+            if not server.wait_for_server(timeout_sec=SERVER_TIMEOUT):
                 self.get_logger().error(f"[{self.__log_counter}] SERVER UNAVAILABLE (timeout = {SERVER_TIMEOUT:0.2f})")
+            else:
+                server.send_goal_async(msg)
+                self.get_logger().info(f"[{self.__log_counter}] \033[1;102mMESSAGE WAS SENT\033[0;0m")
 
     def __action_calls(self, gesture_command:str, **args): # args in mm
         
@@ -524,19 +526,20 @@ class Gesture_Classifier(Node):
             self.get_logger().info(f"[{self.__log_counter}] Received RGBD frames of size {color_image.height} x {color_image.width} (H x W)" +
                                     (f" at {self.__gps_to_abs_xy(lat=global_position.latitude, lon=global_position.longitude)} (mm) ((0,0) is the initial)" if FIX_AVAILABLE else ""))
             
-            # color_image_array = np.asarray(color_image.data, dtype=np.uint8).reshape((color_image.height, color_image.width, 3)) # H x W x 3
-            # depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
+            if SIMULATION:
+                color_image_array = np.asarray(color_image.data, dtype=np.uint8).reshape((color_image.height, color_image.width, 3)) # H x W x 3
+                depth_map_array = cv2.resize(np.asarray(np.frombuffer(depth_map.data,dtype=np.uint16), dtype=np.float32),dsize=(color_image.width, color_image.height)).reshape((color_image.height, color_image.width, 1)) # H x W x 1
+            else:
+                yuyv = np.frombuffer(color_image.data, dtype=np.uint8)
+                yuyv = yuyv.reshape((color_image.height, color_image.width, 2))
+                bgr = cv2.cvtColor(yuyv, cv2.COLOR_YUV2BGR_YUY2)
+                color_image_array = bgr.reshape((color_image.height, color_image.width, 3))
+                if DEBUGGING:
+                    cv2.imwrite("color.png", color_image_array)
 
-            yuyv = np.frombuffer(color_image.data, dtype=np.uint8)
-            yuyv = yuyv.reshape((color_image.height, color_image.width, 2))
-            bgr = cv2.cvtColor(yuyv, cv2.COLOR_YUV2BGR_YUY2)
-            color_image_array = bgr.reshape((color_image.height, color_image.width, 3))
-            if DEBUGGING:
-                cv2.imwrite("color.png", color_image_array)
-
-            depth_map_array = np.frombuffer(depth_map.data, dtype=np.uint16).reshape((depth_map.height, depth_map.width))
-            if DEBUGGING:
-                cv2.imwrite("depth.png", depth_map_array)
+                depth_map_array = np.frombuffer(depth_map.data, dtype=np.uint16).reshape((depth_map.height, depth_map.width))
+                if DEBUGGING:
+                    cv2.imwrite("depth.png", depth_map_array)
 
             all_keypoints = self.__detect_keypoints(image=color_image_array, depth_map=depth_map_array)
             self.get_logger().info(f"[{self.__log_counter}] {len(all_keypoints)} detected humans")
