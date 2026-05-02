@@ -126,6 +126,15 @@ class Producer(Node):
 
             "frames2/high_Come-to-me_338_color.png", # 1 single
 
+            "frames2/multi_person.png", # dummy, low confidence
+
+            "frames2/high_Come-to-me_338_color.png", # 4+1 successive
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+            "frames2/high_Come-to-me_338_color.png",
+
+
         ]
 
         self.__depth_frames = ["frames2/high_Come-to-me_338_depth.png"] * len(self.__rgb_frames)

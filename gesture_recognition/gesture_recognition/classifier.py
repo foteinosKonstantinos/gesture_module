@@ -53,6 +53,7 @@ TARGET_TIMEOUT_SECONDS = 1e-1
 SLOP = 1e-1
 MAX_FPS = 2
 MIN_OCCURS = 4
+SERVER_TIMEOUT = 1.0
 
 # DEPTH_TOPIC = "/camera_front/depth"
 # RGB_TOPIC = "/camera_front/color"
@@ -91,7 +92,7 @@ CLASSES = {
     "7": "i-lost-connection",
     "8": "fetch-a-shovel",
     "9": "fetch-an-axe",
-    "10": "ok-to-go",
+    "10": "unfreeze",
     "11": "move-away-from-here",
     "12": "stop"
 }
@@ -362,6 +363,13 @@ class Gesture_Classifier(Node):
                 self.get_logger().info(f"[{self.__log_counter}] {self.__counter_command} > {MIN_OCCURS} for {gesture_command}")
             return True
 
+    def __call_server(self, server, msg):
+        if not NO_UNDERLYING_IMPL:
+            if server.wait_for_server(timeout_sec=SERVER_TIMEOUT):
+                server.send_goal_async(msg)
+            else:
+                self.get_logger().error(f"[{self.__log_counter}] SERVER UNAVAILABLE (timeout = {SERVER_TIMEOUT:0.2f})")
+
     def __action_calls(self, gesture_command:str, **args): # args in mm
         
         # https://asantamarianavarro.gitlab.io/code/projects/triffid/aurops/sections/triffid/ugv_planning.html#gesture-commander
@@ -384,53 +392,39 @@ class Gesture_Classifier(Node):
             msg.goal_pose.orientation.z = float(args["q2"])
             msg.goal_pose.orientation.w = float(args["q3"])
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__navigation.wait_for_server()
-            self.__navigation.send_goal_async(msg)
+            self.__call_server(self.__navigation, msg)
         
-        elif gesture_command == "ok-to-go": # Previously named "ok-to-go", unfreeze
+        elif gesture_command == "unfreeze": # Previously named "ok-to-go", unfreeze
             msg = Trigger.Goal()
             msg.activate = False
-            if not NO_UNDERLYING_IMPL:
-                self.__freeze.wait_for_server()
-            self.__freeze.send_goal_async(msg)
+            self.__call_server(self.__freeze, msg)
         
         elif gesture_command == "move-away-from-here":
             msg = Trigger.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__retreat.wait_for_server()
-            self.__retreat.send_goal_async(msg)
+            self.__call_server(self.__retreat, msg)
         
         elif gesture_command == "operation-finished":
             msg = ReturnToBase.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__return_bos.wait_for_server()
-            self.__return_bos.send_goal_async(msg)
+            self.__call_server(self.__return_bos, msg)
         
         elif gesture_command == "freeze":
             msg = Trigger.Goal()
             msg.activate = True
-            if not NO_UNDERLYING_IMPL:
-                self.__freeze.wait_for_server()
-            self.__freeze.send_goal_async(msg)
+            self.__call_server(self.__freeze, msg)
         
         elif gesture_command == "stop":
             msg = Trigger.Goal()
             msg.activate = True
-            if not NO_UNDERLYING_IMPL:
-                self.__stop.wait_for_server()
-            self.__stop.send_goal_async(msg)
+            self.__call_server(self.__stop, msg)
 
         elif gesture_command == "emergency-situation":
             msg = Trigger.Goal()
             msg.activate = True
-            if not NO_UNDERLYING_IMPL:
-                self.__emergency.wait_for_server()
-            self.__emergency.send_goal_async(msg)
+            self.__call_server(self.__emergency, msg)
 
         elif gesture_command == "i-need-help":
             return
@@ -445,17 +439,13 @@ class Gesture_Classifier(Node):
             msg.target_transform.rotation.w = float(args["q3"])
             msg.help_type = "aids"
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__help.wait_for_server()
-            self.__help.send_goal_async(msg)
+            self.__call_server(self.__help, msg)
         
         elif gesture_command == "evacuate-the-area": # TODO: map this command to an action
             msg = ReturnToBase.Goal()
             msg.activate = True
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__return_bos.wait_for_server()
-            self.__return_bos.send_goal_async(msg)
+            self.__call_server(self.__return_bos, msg)
         
         elif gesture_command == "i-lost-connection":
             return
@@ -470,36 +460,28 @@ class Gesture_Classifier(Node):
             msg.target_transform.rotation.w = float(args["q3"])
             msg.help_type = "technical"
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__help.wait_for_server()
-            self.__help.send_goal_async(msg)
+            self.__call_server(self.__help, msg)
         
         elif gesture_command == "fetch-a-gas-mask":
             msg = ReturnToBaseFetch.Goal()
             msg.activate = True
             msg.object = "gas_mask"
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:    
-                self.__fetch.wait_for_server()
-            self.__fetch.send_goal_async(msg)
+            self.__call_server(self.__fetch, msg)
         
         elif gesture_command == "fetch-a-shovel":
             msg = ReturnToBaseFetch.Goal()
             msg.activate = True
             msg.object = "shovel"
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:
-                self.__fetch.wait_for_server()
-            self.__fetch.send_goal_async(msg)
+            self.__call_server(self.__fetch, msg)
         
         elif gesture_command == "fetch-an-axe":
             msg = ReturnToBaseFetch.Goal()
             msg.activate = True
             msg.object = "axe"
             msg.timeout = -1.0
-            if not NO_UNDERLYING_IMPL:    
-                self.__fetch.wait_for_server()
-            self.__fetch.send_goal_async(msg)
+            self.__call_server(self.__fetch, msg)
 
         else:
             self.get_logger().error(f"[{self.__log_counter}] Unknown command: {gesture_command}")
